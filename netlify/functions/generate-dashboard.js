@@ -22,13 +22,13 @@ function extractOutputText(json) {
 
 function stripCodeFences(s) {
   if (typeof s !== "string") return s;
-  // Remove ```json ... ``` or ``` ... ```
+  // quita ```json ... ``` o ``` ... ```
   return s.replace(/^```[a-zA-Z]*\n?/m, "").replace(/```$/m, "").trim();
 }
 
 function cleanseBase64(b64) {
   if (!b64 || typeof b64 !== "string") return b64;
-  // Remove data URI prefixes, whitespace and line breaks
+  // quita prefijos data-uri y espacios/saltos
   b64 = b64.replace(/^data:application\/pdf;base64,?/i, "");
   b64 = b64.replace(/\s+/g, "");
   return b64;
@@ -36,7 +36,7 @@ function cleanseBase64(b64) {
 
 function looksLikePdf(bytes) {
   if (!bytes || bytes.length < 4) return false;
-  // %PDF header
+  // %PDF
   return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
 }
 
@@ -53,15 +53,19 @@ export default async (req) => {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // Validación servidor
-    const MAX_BYTES = 20 * 1024 * 1024;
+    // Validación servidor: extensión y tamaño
+    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
     const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-    if (!allowed.has(ext)) return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
-    if (typeof file.size === "number" && file.size > MAX_BYTES) return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
+    if (!allowed.has(ext)) {
+      return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
+    }
+    if (typeof file.size === "number" && file.size > MAX_BYTES) {
+      return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
+    }
 
-    // 1) Subir a Files API
+    // 1) Subir a Files API (purpose actualizado)
     const uploadForm = new FormData();
     uploadForm.append("file", file);
     uploadForm.append("purpose", "user_data");
@@ -77,46 +81,43 @@ export default async (req) => {
     }
     const { id: fileId } = await filesResp.json();
 
-    // 2) Responses API con JSON Schema estricto
-    // 1) Definí el esquema JSON
-const textFormat = {
-  format: "json_schema",
-  json_schema: {
-    name: "pdf_payload",
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        filename: { type: "string" },
-        base64: { type: "string", description: "PDF en Base64 sin prefijos" }
+    // 2) Responses API con text.format (json_schema)
+    const body = {
+      model: "gpt-4.1-mini",
+      max_output_tokens: 200000,
+      text: {
+        format: {
+          type: "json_schema",
+          json_schema: {
+            name: "pdf_payload",
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                filename: { type: "string" },
+                base64: { type: "string", description: "PDF en Base64 sin prefijos ni saltos" }
+              },
+              required: ["base64"]
+            }
+          }
+        }
       },
-      required: ["base64"]
-    }
-  }
-};
-
-// 2) Armá el body usando text.format
-const body = {
-  model: "gpt-4.1-mini",
-  max_output_tokens: 200000,
-  text: textFormat,                          // <- acá va ahora
-  input: [
-    {
-      role: "user",
-      content: [
+      input: [
         {
-          type: "input_text",
-          text:
-            `${prompt}\n\n` +
-            `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks).\n` +
-            `Asegúrate de que el PDF sea válido y codificado en Base64 sin saltos de línea ni prefijos.`
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text:
+                `${prompt}\n\n` +
+                `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks). ` +
+                `Asegúrate de que el PDF sea válido y esté codificado en Base64 sin prefijos (sin 'data:...') ni saltos de línea.`
+            },
+            { type: "input_file", file_id: fileId },
+          ],
         },
-        { type: "input_file", file_id: fileId }
       ],
-    },
-  ],
-};
-
+    };
 
     const resp = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -132,16 +133,20 @@ const body = {
     }
     const json = await resp.json();
 
-    // Extraer JSON con base64
+    // Extraer texto con el JSON y parsearlo
     let out = extractOutputText(json) || "";
     out = stripCodeFences(out);
+
     let data;
     try { data = JSON.parse(out); }
-    catch (e) {
+    catch {
       return new Response("El modelo no devolvió JSON válido con el PDF en base64.", { status: 502 });
     }
 
-    const filename = (typeof data.filename === "string" && data.filename.trim()) ? data.filename.trim() : "InsightSimple-Reporte.pdf";
+    const filename = (typeof data.filename === "string" && data.filename.trim())
+      ? data.filename.trim()
+      : "InsightSimple-Reporte.pdf";
+
     let base64 = cleanseBase64(data.base64);
     if (!base64) {
       return new Response("Respuesta sin base64 utilizable.", { status: 502 });
@@ -150,7 +155,7 @@ const body = {
     let bytes;
     try {
       bytes = Buffer.from(base64, "base64");
-    } catch (e) {
+    } catch {
       return new Response("Base64 inválido recibido del modelo.", { status: 502 });
     }
 
