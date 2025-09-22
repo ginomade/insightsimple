@@ -1,0 +1,15 @@
+{
+  "name": "insightsimple-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "netlify dev --dir=. --functions=netlify/functions",
+    "deploy": "netlify deploy --prod --dir=. --functions=netlify/functions",
+    "deploy:staging": "netlify deploy --dir=. --functions=netlify/functions",
+    "env:set": "netlify env:set OPENAI_API_KEY $OPENAI_API_KEY"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}
