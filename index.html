@@ -1,145 +1,212 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>InsightSimple - Informe IA en PDF</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InsightSimple — Dashboard IA en PDF</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <style>
-    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #f7f9fc; color: #333; }
-    header { background: linear-gradient(135deg, #1b1f3a, #4c8aff); color: #fff; padding: 50px 20px; text-align: center; position: relative; }
-    header h1 { margin: 0; font-size: 2.6em; }
-    header p { font-size: 1.1em; margin: 12px 0 24px; opacity: .95; }
-    .cta-button { padding: 14px 22px; font-size: 1em; color: #fff; background: #4c8aff; border: none; border-radius: 999px; cursor: pointer; transition: all .2s ease; }
-    .cta-button:hover { background: #3a6fd8; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.18); }
-    .cta-secondary { background:#6b7280; }
-    #spinner { display:none; margin-top: 12px; }
-    section { padding: 48px 20px; max-width: 1000px; margin: auto; text-align: center; }
-    .benefits, .testimonial { display:flex; flex-wrap:wrap; gap:20px; margin-top: 24px; }
-    .card { flex:1; min-width:250px; background:#fff; padding:22px; border-radius:12px; box-shadow:0 4px 10px rgba(0,0,0,.08); transition: transform .2s ease; }
-    .card:hover { transform: translateY(-4px); }
-    .dashboard img { width:85%; max-width:700px; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,.2); }
-    #toast { visibility:hidden; min-width:260px; margin-left:-130px; background:#333; color:#fff; text-align:center; border-radius:6px; padding:14px; position:fixed; z-index:10; left:50%; bottom:28px; font-size:15px; transition: visibility 0s, opacity .4s; opacity:0; }
-    #toast.show { visibility:visible; opacity:1; }
-    footer { background:#1b1f3a; color:#fff; text-align:center; padding:28px 20px; margin-top:36px; }
+    :root {
+      --bg: #0b1020;
+      --card: #121735;
+      --muted: #9aa4c7;
+      --text: #e6e9f7;
+      --primary: #6ea8fe;
+      --primary-strong: #4c8aff;
+      --accent: #a48bfe;
+      --success: #3ddc97;
+      --danger: #ff6b6b;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      background: radial-gradient(1200px 1200px at 10% 10%, #1b1f3a 0%, #0b1020 45%, #090d1c 100%);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    header {
+      padding: 56px 24px 32px;
+      text-align: center;
+    }
+    .brand { display: inline-flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+    .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--accent)); box-shadow: var(--shadow); }
+    h1 { font-size: 42px; margin: 8px 0 12px; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 18px; max-width: 800px; margin: 0 auto; }
+    main { max-width: 980px; margin: 24px auto 80px; padding: 0 20px; }
+    .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    .card { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02)); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; backdrop-filter: blur(8px); }
+    .card h2 { margin-top: 0; font-size: 18px; color: #dbe3ff; letter-spacing: 0.02em; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+    .kpi { background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; }
+    .kpi label { display:block; color:#b9c5ef; font-size:12px; margin-bottom: 4px; }
+    .kpi strong { font-size: 18px; }
+
+    /* Dropzone */
+    .dz { margin-top: 10px; border: 2px dashed rgba(255,255,255,0.18); border-radius: 16px; padding: 24px; text-align: center; transition: border-color .2s, background .2s; background: rgba(255,255,255,0.03); }
+    .dz.dragover { border-color: var(--primary); background: rgba(78,129,255,0.08); }
+    .dz input[type=file] { display: none; }
+    .dz .hint { color: var(--muted); font-size: 14px; }
+    .actions { display: flex; gap: 10px; margin-top: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn { appearance: none; border: 0; border-radius: 12px; padding: 12px 16px; background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: white; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); transition: transform .05s ease, filter .2s ease; }
+    .btn:disabled { filter: grayscale(0.5) brightness(0.8); cursor: not-allowed; }
+    .btn:active { transform: translateY(1px); }
+    .ghost { background: rgba(255,255,255,0.08); color: #dbe3ff; }
+
+    .status { margin-top: 10px; min-height: 22px; }
+    .status .ok { color: var(--success); }
+    .status .err { color: var(--danger); }
+
+    /* Spinner */
+    .spinner { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.25); border-top-color: white; border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toasts */
+    .toasts { position: fixed; top: 18px; right: 18px; display: flex; flex-direction: column; gap: 10px; z-index: 9999; }
+    .toast { background: rgba(16,21,45,0.9); color: var(--text); border: 1px solid rgba(255,255,255,0.08); padding: 12px 14px; border-radius: 12px; box-shadow: var(--shadow); min-width: 240px; }
+    .toast.ok { border-color: rgba(61,220,151,0.6); }
+    .toast.err { border-color: rgba(255,107,107,0.6); }
+
+    footer { text-align: center; color: var(--muted); padding: 28px 14px; }
   </style>
 </head>
 <body>
+  <div class="toasts" id="toasts"></div>
 
   <header>
-    <h1>InsightSimple</h1>
-    <p>Subí tu PDF o Excel y obtené un <strong>informe tipo dashboard en PDF</strong> con KPIs, gráficos e insights accionables.</p>
-    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-      <button class="cta-button" id="uploadBtn">Subir documento</button>
-      <button class="cta-button cta-secondary" id="resetBtn">Limpiar y nuevo</button>
+    <div class="brand">
+      <div class="logo"></div>
+      <strong>InsightSimple</strong>
     </div>
-    <input id="fileInput" type="file" accept=".pdf,.xlsx,.xls" style="display:none" />
-    <div id="spinner">⏳ Procesando...</div>
+    <h1>Subí tu documento. Recibí un <em>PDF</em> con insights.</h1>
+    <p class="subtitle">PDF o Excel (hasta 20 MB). Generamos un informe tipo dashboard con KPIs, gráficos y recomendaciones para decidir sin drama.</p>
   </header>
 
-  <section>
-    <h2>¿Por qué usar InsightSimple?</h2>
-    <div class="benefits">
-      <div class="card">
-        <h3>Fácil de usar</h3>
-        <p>Subís el archivo y recibís un PDF listo para compartir, sin configuraciones raras.</p>
+  <main class="grid">
+    <section class="card">
+      <h2>Tu archivo</h2>
+      <div class="dz" id="dropzone">
+        <p class="hint">Arrastrá y soltá tu PDF/Excel aquí, o</p>
+        <div class="actions">
+          <label class="btn ghost" for="fileInput">Elegir archivo</label>
+          <button class="btn" id="uploadBtn">Generar informe</button>
+          <button class="btn ghost" id="resetBtn">Limpiar y nuevo</button>
+        </div>
+        <input id="fileInput" type="file" accept=".pdf,.xlsx,.xls" />
+        <div class="status" id="status"></div>
       </div>
-      <div class="card">
-        <h3>Insights automáticos</h3>
-        <p>Nuestra IA detecta tendencias, alertas y recomendaciones clave.</p>
-      </div>
-      <div class="card">
-        <h3>Ahorra tiempo</h3>
-        <p>Olvidate de horas armando reportes. Nosotros lo hacemos por vos.</p>
-      </div>
-    </div>
-  </section>
+      <details style="margin-top:16px;">
+        <summary class="muted">Opciones avanzadas (prompt)</summary>
+        <textarea id="prompt" style="width:100%; min-height:120px; margin-top:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: var(--text); padding:10px;">Eres un analista de negocio y diseñador de documentos. A partir del archivo adjunto (PDF/Excel), genera un **informe tipo dashboard en formato PDF (.pdf)** con 6-10 páginas que incluya: portada, resumen ejecutivo, KPIs clave (tablas), 2-3 gráficos (línea/barras/pie), insights y recomendaciones accionables, y una última página con próximos pasos. Usa títulos claros y notas breves al pie si hace falta. Si los datos no alcanzan, indica supuestos. Idioma: español.</textarea>
+      </details>
+    </section>
 
-  <section class="dashboard">
-    <h2>Así se ve tu informe</h2>
-    <img src="https://dummyimage.com/700x450/cccccc/000000&text=Ejemplo+de+Informe+PDF" alt="Informe ejemplo">
-  </section>
-
-  <section>
-    <h2>Lo que dicen nuestros usuarios</h2>
-    <div class="testimonial">
-      <div class="card">
-        <p>“InsightSimple me da un informe pulido en minutos. Ideal para juntas.”</p>
-        <strong>- Mariana, Dueña de cafetería</strong>
+    <aside class="card">
+      <h2>Preview</h2>
+      <div class="kpis">
+        <div class="kpi"><label>Tiempo ahorrado</label><strong>~2h</strong></div>
+        <div class="kpi"><label>Páginas generadas</label><strong>6–10</strong></div>
+        <div class="kpi"><label>Formato</label><strong>PDF</strong></div>
       </div>
-      <div class="card">
-        <p>“Pasé de Excel crudo a PDF con KPIs y gráficos sin sufrir.”</p>
-        <strong>- Pedro, Consultor financiero</strong>
-      </div>
-    </div>
-  </section>
+      <p class="muted" style="margin-top:12px">El PDF se descarga automáticamente al terminar. Procesamiento efímero vía función serverless.</p>
+    </aside>
+  </main>
 
-  <footer>
-    <p>&copy; 2025 InsightSimple. Todos los derechos reservados.</p>
-  </footer>
-
-  <div id="toast"></div>
+  <footer>© 2025 InsightSimple</footer>
 
   <script>
-    const uploadBtn = document.getElementById('uploadBtn');
-    const resetBtn = document.getElementById('resetBtn');
-    const fileInput = document.getElementById('fileInput');
-    const spinner = document.getElementById('spinner');
-    const toast = document.getElementById('toast');
-
-    const DEFAULT_PROMPT = `Eres un analista de negocio y diseñador de documentos. A partir del archivo adjunto (PDF/Excel), genera un **informe tipo dashboard en formato PDF (.pdf)** con 6-10 páginas que incluya: portada, resumen ejecutivo, KPIs clave (tablas), 2-3 gráficos (línea/barras/pie), insights y recomendaciones accionables, y una última página con próximos pasos. Usa títulos claros y notas breves al pie si hace falta. Si los datos no alcanzan, indica supuestos. Idioma: español.`;
-
-    function showToast(msg) {
-      toast.textContent = msg;
-      toast.className = "show";
-      setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3800);
+    const toasts = document.getElementById('toasts');
+    function toast(msg, type='ok', timeout=3500){
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      t.textContent = msg;
+      toasts.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; setTimeout(()=> t.remove(), 300); }, timeout);
     }
 
-    uploadBtn.addEventListener('click', () => fileInput.click());
+    const fileInput = document.getElementById('fileInput');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusEl = document.getElementById('status');
+    const dropzone = document.getElementById('dropzone');
+
+    let currentFile = null;
+
+    function validate(file){
+      const MAX_BYTES = 20 * 1024 * 1024; // 20MB
+      const allowed = new Set(['pdf','xlsx','xls']);
+      const name = file?.name || '';
+      const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+      if (!allowed.has(ext)) throw new Error('Formato no permitido. Solo PDF o Excel (.pdf, .xlsx, .xls).');
+      if (file.size > MAX_BYTES) throw new Error('Archivo demasiado grande. Máximo permitido: 20 MB.');
+    }
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        validate(file);
+        currentFile = file;
+        statusEl.innerHTML = '✔ Archivo listo: <strong>' + file.name + '</strong> (' + (file.size/1024/1024).toFixed(2) + ' MB)';
+      } catch (e) {
+        statusEl.innerHTML = '<span class="err">' + e.message + '</span>';
+        fileInput.value = '';
+        currentFile = null;
+      }
+    });
+
+    ;['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover');
+    }));
+    ;['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover');
+    }));
+    dropzone.addEventListener('drop', (e)=>{
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      try {
+        validate(file);
+        currentFile = file;
+        statusEl.innerHTML = '✔ Archivo listo: <strong>' + file.name + '</strong> (' + (file.size/1024/1024).toFixed(2) + ' MB)';
+      } catch (err) {
+        statusEl.innerHTML = '<span class="err">' + err.message + '</span>';
+        currentFile = null;
+      }
+    });
+
     resetBtn.addEventListener('click', () => {
+      currentFile = null;
       fileInput.value = '';
-      spinner.style.display = 'none';
-      uploadBtn.disabled = false;
-      showToast('Datos limpiados. Elegí un nuevo archivo.');
+      statusEl.textContent = '';
+      toast('Datos limpiados. Elegí un nuevo archivo.', 'ok');
       fileInput.click();
     });
 
-    fileInput.addEventListener('change', async () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
-
-      // Validación cliente: solo PDF/Excel, hasta 20 MB
-      const MAX_BYTES = 20 * 1024 * 1024;
-      const allowedExt = new Set(["pdf", "xlsx", "xls"]);
-      const name = file.name || "";
-      const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-
-      if (!allowedExt.has(ext)) {
-        showToast('Formato no permitido. Solo PDF o Excel (.pdf, .xlsx, .xls).');
-        fileInput.value = '';
-        return;
-      }
-      if (file.size > MAX_BYTES) {
-        showToast('Archivo demasiado grande. Máximo permitido: 20 MB.');
-        fileInput.value = '';
-        return;
-      }
+    async function generate(){
+      const file = currentFile || fileInput.files?.[0];
+      if (!file) { toast('Subí un PDF o Excel primero.', 'err'); return; }
 
       try {
-        spinner.style.display = 'block';
+        validate(file);
+        const userPrompt = document.getElementById('prompt').value.trim();
         uploadBtn.disabled = true;
+        const oldLabel = uploadBtn.textContent;
+        uploadBtn.innerHTML = '<span class="spinner"></span>Generando...';
+        statusEl.textContent = 'Procesando documento con IA…';
 
         const form = new FormData();
         form.append('file', file);
-        form.append('prompt', DEFAULT_PROMPT);
+        form.append('prompt', userPrompt);
 
-        const resp = await fetch('/.netlify/functions/generate-dashboard', {
-          method: 'POST',
-          body: form
-        });
-
+        const resp = await fetch('/.netlify/functions/generate-dashboard', { method: 'POST', body: form });
         if (!resp.ok) {
-          const msg = await resp.text();
-          throw new Error(msg || 'Error en la generación del informe');
+          const txt = await resp.text();
+          throw new Error(txt || 'Error en la generación del informe');
         }
 
         const blob = await resp.blob();
@@ -152,16 +219,19 @@
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        showToast('Documento PDF generado ✅');
-      } catch (e) {
-        console.error(e);
-        showToast('Ups, no se pudo generar el PDF. Reintentá o consultá la consola.');
+        statusEl.innerHTML = '<span class="ok">Documento PDF generado ✅</span>';
+        toast('Informe generado y descargado.', 'ok');
+      } catch (err) {
+        console.error(err);
+        statusEl.innerHTML = '<span class="err">' + err.message + '</span>';
+        toast(err.message, 'err');
       } finally {
-        spinner.style.display = 'none';
         uploadBtn.disabled = false;
-        fileInput.value = '';
+        uploadBtn.textContent = 'Generar informe';
       }
-    });
+    }
+
+    document.getElementById('uploadBtn').addEventListener('click', generate);
   </script>
 </body>
 </html>

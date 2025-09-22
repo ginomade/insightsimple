@@ -12,22 +12,18 @@ export default async (req) => {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // Validación servidor: extensión y tamaño
-    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+    // Validación: extensión y tamaño
+    const MAX_BYTES = 20 * 1024 * 1024;
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
     const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-    if (!allowed.has(ext)) {
-      return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
-    }
-    if (typeof file.size === "number" && file.size > MAX_BYTES) {
-      return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
-    }
+    if (!allowed.has(ext)) return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
+    if (typeof file.size === "number" && file.size > MAX_BYTES) return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
 
     // 1) Subir a OpenAI Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
-    uploadForm.append("purpose", "user_data"); // actualizado
+    uploadForm.append("purpose", "user_data");
 
     const filesResp = await fetch("https://api.openai.com/v1/files", {
       method: "POST",
@@ -41,7 +37,7 @@ export default async (req) => {
     const filesJson = await filesResp.json();
     const fileId = filesJson.id;
 
-    // 2) Pedir PDF a Responses API (base64 dentro de JSON)
+    // 2) Pedir PDF en base64 via Responses API
     const body = {
       model: "gpt-4.1-mini",
       input: [
@@ -76,7 +72,7 @@ export default async (req) => {
     }
     const json = await resp.json();
 
-    // Extraer texto con el JSON
+    // Extraer JSON con base64 desde output_text
     const texts = [];
     for (const item of json.output ?? []) {
       if (item.type === "message") {
@@ -94,9 +90,7 @@ export default async (req) => {
 
     const filename = data.filename || "InsightSimple-Reporte.pdf";
     const base64 = data.base64;
-    if (!base64) {
-      return new Response("Respuesta sin campo base64. Ajustá el prompt o el modelo.", { status: 500 });
-    }
+    if (!base64) return new Response("Respuesta sin campo base64.", { status: 500 });
 
     const bytes = Buffer.from(base64, "base64");
     return new Response(bytes, {
