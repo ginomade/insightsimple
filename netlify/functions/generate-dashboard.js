@@ -7,11 +7,24 @@ export default async (req) => {
     const form = await req.formData();
     const prompt = form.get("prompt") || "Genera un dashboard en PPT.";
     const file = form.get("file");
+
     if (!(file && typeof file === "object")) {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // 1) Upload file to OpenAI Files API
+    // Validación servidor: extensión y tamaño
+    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+    const allowed = new Set(["pdf", "xlsx", "xls"]);
+    const name = file.name ?? "";
+    const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+    if (!allowed.has(ext)) {
+      return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
+    }
+    if (typeof file.size === "number" && file.size > MAX_BYTES) {
+      return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
+    }
+
+    // 1) Subir archivo a OpenAI Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
     uploadForm.append("purpose", "responses");
@@ -28,7 +41,7 @@ export default async (req) => {
     const filesJson = await filesResp.json();
     const fileId = filesJson.id;
 
-    // 2) Call Responses API asking for PPTX base64 JSON
+    // 2) Llamar Responses API pidiendo PPTX como base64 en JSON
     const body = {
       model: "gpt-4.1-mini",
       input: [
@@ -63,7 +76,7 @@ export default async (req) => {
     }
     const json = await resp.json();
 
-    // Extract text output from Responses output
+    // Extraer texto con el JSON del PPTX
     const texts = [];
     for (const item of json.output ?? []) {
       if (item.type === "message") {
@@ -98,5 +111,4 @@ export default async (req) => {
     return new Response("Error interno en generate-dashboard", { status: 500 });
   }
 };
-
 export const config = { path: "/.netlify/functions/generate-dashboard" };

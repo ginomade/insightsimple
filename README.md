@@ -1,14 +1,25 @@
-# InsightSimple — Netlify Package (v2)
+# InsightSimple — Repo GitHub (v2: validación cliente/servidor)
 
-Incluye el HTML actualizado (según el canvas), la Function y el netlify.toml.
+Este repo incluye validación de tipo y tamaño **en el cliente y en el servidor** (PDF/XLSX/XLS, ≤20MB).
 
-## Variables de entorno
-- `OPENAI_API_KEY` (en Site settings → Environment variables)
+## Uso local
+```bash
+npm i
+npm run dev
+# abrir http://localhost:8888
+```
 
-## Deploy
-1. app.netlify.com → **Add new site** → **Deploy manually** (Drag & Drop).
-2. Arrastrá este ZIP.
-3. Verificá Functions activas y agregá `OPENAI_API_KEY`.
-4. Probá subir un documento desde la landing.
+## Deploy desde GitHub
+1. Subí este repo a GitHub.
+2. En Netlify: **Add new site → Import from Git**.
+3. Configurá:
+   - Build command: *(vacío)*
+   - Publish directory: `.`
+   - Functions directory: `netlify/functions`
+4. **Environment variables**: agregá `OPENAI_API_KEY`.
+5. Verificá:
+   - `/.netlify/functions/hello` → JSON ok
+   - `/.netlify/functions/generate-dashboard` → GET debe dar 405 (existe)
+6. En la landing, probá **Subir documento** con `.pdf` o `.xlsx/.xls` ≤ 20MB.
 
-Generado: 2025-09-22T14:01:26.109187
+Generado: 2025-09-22T14:56:51.654540
