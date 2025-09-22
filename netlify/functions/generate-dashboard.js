@@ -1,4 +1,45 @@
 // netlify/functions/generate-dashboard.js
+function extractOutputText(json) {
+  const texts = [];
+  const walk = (node) => {
+    if (!node) return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (typeof node === "object") {
+      if (node.type === "output_text" && typeof node.text === "string") {
+        texts.push(node.text);
+      }
+      if (node.type === "message" && Array.isArray(node.content)) {
+        node.content.forEach((c) => {
+          if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text);
+        });
+      }
+      for (const k in node) walk(node[k]);
+    }
+  };
+  walk(json.output);
+  return texts.join("");
+}
+
+function stripCodeFences(s) {
+  if (typeof s !== "string") return s;
+  // Remove ```json ... ``` or ``` ... ```
+  return s.replace(/^```[a-zA-Z]*\n?/m, "").replace(/```$/m, "").trim();
+}
+
+function cleanseBase64(b64) {
+  if (!b64 || typeof b64 !== "string") return b64;
+  // Remove data URI prefixes, whitespace and line breaks
+  b64 = b64.replace(/^data:application\/pdf;base64,?/i, "");
+  b64 = b64.replace(/\s+/g, "");
+  return b64;
+}
+
+function looksLikePdf(bytes) {
+  if (!bytes || bytes.length < 4) return false;
+  // %PDF header
+  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
 export default async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -12,7 +53,7 @@ export default async (req) => {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // Validación: extensión y tamaño
+    // Validación servidor
     const MAX_BYTES = 20 * 1024 * 1024;
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
@@ -20,7 +61,7 @@ export default async (req) => {
     if (!allowed.has(ext)) return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
     if (typeof file.size === "number" && file.size > MAX_BYTES) return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
 
-    // 1) Subir a OpenAI Files API
+    // 1) Subir a Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
     uploadForm.append("purpose", "user_data");
@@ -34,12 +75,29 @@ export default async (req) => {
       const t = await filesResp.text();
       return new Response(`Error subiendo archivo: ${t}`, { status: 500 });
     }
-    const filesJson = await filesResp.json();
-    const fileId = filesJson.id;
+    const { id: fileId } = await filesResp.json();
 
-    // 2) Pedir PDF en base64 via Responses API
+    // 2) Responses API con JSON Schema estricto
+    const responseFormat = {
+      type: "json_schema",
+      json_schema: {
+        name: "pdf_payload",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            filename: { type: "string" },
+            base64: { type: "string", description: "PDF en Base64, sin prefijos" }
+          },
+          required: ["base64"]
+        }
+      }
+    };
+
     const body = {
       model: "gpt-4.1-mini",
+      max_output_tokens: 200000,
+      response_format: responseFormat,
       input: [
         {
           role: "user",
@@ -48,11 +106,10 @@ export default async (req) => {
               type: "input_text",
               text:
                 `${prompt}\n\n` +
-                `IMPORTANTE: devolvé únicamente un objeto JSON con la forma { "filename": "reporte.pdf", "base64": "<...>" } ` +
-                `donde "base64" es el contenido del PDF en Base64 sin prefijos. ` +
-                `No incluyas texto adicional fuera del JSON.`,
+                `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks).\n` +
+                `Asegúrate de que el PDF sea válido y codificado en Base64 sin saltos de línea ni prefijos.`
             },
-            { type: "input_file", file_id: fileId },
+            { type: "input_file", file_id: fileId }
           ],
         },
       ],
@@ -72,27 +129,32 @@ export default async (req) => {
     }
     const json = await resp.json();
 
-    // Extraer JSON con base64 desde output_text
-    const texts = [];
-    for (const item of json.output ?? []) {
-      if (item.type === "message") {
-        for (const c of item.content ?? []) {
-          if (c.type === "output_text") texts.push(c.text);
-        }
-      }
-      if (item.type === "output_text") texts.push(item.text);
-    }
-    const out = texts.join("");
+    // Extraer JSON con base64
+    let out = extractOutputText(json) || "";
+    out = stripCodeFences(out);
     let data;
-    try { data = JSON.parse(out); } catch {
-      return new Response("El modelo no devolvió JSON válido con el PDF en base64.", { status: 500 });
+    try { data = JSON.parse(out); }
+    catch (e) {
+      return new Response("El modelo no devolvió JSON válido con el PDF en base64.", { status: 502 });
     }
 
-    const filename = data.filename || "InsightSimple-Reporte.pdf";
-    const base64 = data.base64;
-    if (!base64) return new Response("Respuesta sin campo base64.", { status: 500 });
+    const filename = (typeof data.filename === "string" && data.filename.trim()) ? data.filename.trim() : "InsightSimple-Reporte.pdf";
+    let base64 = cleanseBase64(data.base64);
+    if (!base64) {
+      return new Response("Respuesta sin base64 utilizable.", { status: 502 });
+    }
 
-    const bytes = Buffer.from(base64, "base64");
+    let bytes;
+    try {
+      bytes = Buffer.from(base64, "base64");
+    } catch (e) {
+      return new Response("Base64 inválido recibido del modelo.", { status: 502 });
+    }
+
+    if (!looksLikePdf(bytes)) {
+      return new Response("El contenido devuelto no parece ser un PDF válido.", { status: 502 });
+    }
+
     return new Response(bytes, {
       status: 200,
       headers: {

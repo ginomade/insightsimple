@@ -1,8 +1,9 @@
-# InsightSimple — SaaS 2025 (PDF + user_data)
+# InsightSimple — SaaS 2025 (PDF hardened, json_schema)
 
-- Front: estilo SaaS 2025, dropzone, toasts, spinner, prompt editable, botón **Limpiar y nuevo**.
-- Output **PDF**.
-- Functions: Files API con `purpose=user_data`; Responses API devuelve JSON con base64 → `application/pdf`.
+- Output: **PDF**.
+- Responses API con **response_format: json_schema** para garantizar JSON válido.
+- Limpieza de base64 (sin prefijos), verificación del header **%PDF** antes de enviar.
+- Front SaaS 2025 intacto.
 
 ## Local
 ```bash
@@ -14,14 +15,14 @@ npm run dev
 ## Deploy desde GitHub
 1. Subí este repo a GitHub.
 2. Netlify → **Add new site → Import from Git**.
-3. Configuración:
+3. Config:
    - Build command: *(vacío)*
    - Publish directory: `.`
    - Functions directory: `netlify/functions`
-4. **Environment variables**: `OPENAI_API_KEY`.
-5. Verificá:
-   - `/.netlify/functions/hello` → JSON ok
-   - `/.netlify/functions/generate-dashboard` → GET devuelve 405 (si realizás un POST desde la web, descarga PDF)
-6. Probá subir un **PDF/Excel ≤ 20MB** desde la landing.
+4. Env vars: `OPENAI_API_KEY`.
+5. Pruebas:
+   - `/.netlify/functions/hello` → 200 JSON
+   - `/.netlify/functions/generate-dashboard` (GET) → 405
+   - Carga un PDF/Excel ≤20MB y descarga el **PDF**.
 
-— Generado: 2025-09-22T19:25:05.010320
+— Generado: 2025-09-22T19:33:26.042944
