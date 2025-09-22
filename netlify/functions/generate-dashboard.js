@@ -78,22 +78,22 @@ export default async (req) => {
     }
     const { id: fileId } = await filesResp.json();
 
-    // 2) Responses API con text.format (json_schema) — name requerido al mismo nivel
+    // 2) Responses API con text.format (json_schema) — filename y base64 requeridos
     const body = {
       model: "gpt-4.1-mini",
       max_output_tokens: 200000,
       text: {
         format: {
           type: "json_schema",
-          name: "pdf_payload",               // <- requerido
-          schema: {                          // <- schema directo aquí
+          name: "pdf_payload",
+          schema: {
             type: "object",
             additionalProperties: false,
             properties: {
-              filename: { type: "string" },
+              filename: { type: "string", description: "Nombre del PDF, ej. InsightSimple-Reporte.pdf" },
               base64: { type: "string", description: "PDF en Base64 sin prefijos ni saltos" }
             },
-            required: ["base64"]
+            required: ["filename", "base64"] // <- agregado 'filename'
           }
         }
       },
@@ -106,6 +106,7 @@ export default async (req) => {
               text:
                 `${prompt}\n\n` +
                 `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks). ` +
+                `Incluye siempre las claves "filename" y "base64". ` +
                 `Asegúrate de que el PDF sea válido y esté codificado en Base64 sin prefijos (sin 'data:...') ni saltos de línea.`
             },
             { type: "input_file", file_id: fileId },
