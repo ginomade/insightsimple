@@ -28,7 +28,7 @@ export default async (req) => {
     // 1) Upload to OpenAI Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
-    uploadForm.append("purpose", "responses");
+    uploadForm.append("purpose", "user_data");
 
     const filesResp = await fetch("https://api.openai.com/v1/files", {
       method: "POST",
