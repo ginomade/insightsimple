@@ -1,6 +1,6 @@
 {
   "name": "insightsimple-site",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,10 +9,13 @@
   "scripts": {
     "dev": "netlify dev --dir=. --functions=netlify/functions",
     "preview": "netlify deploy --dir=. --functions=netlify/functions",
-    "deploy": "netlify deploy --prod --dir=. --functions=netlify/functions",
-    "env:set": "netlify env:set OPENAI_API_KEY $OPENAI_API_KEY"
+    "deploy": "netlify deploy --prod --dir=. --functions=netlify/functions"
   },
   "devDependencies": {
     "netlify-cli": "^17.0.0"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^131.0.0",
+    "puppeteer-core": "^22.15.0"
   }
 }

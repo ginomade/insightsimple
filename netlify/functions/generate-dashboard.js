@@ -1,4 +1,7 @@
 // netlify/functions/generate-dashboard.js
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
+
 function extractOutputText(json) {
   const texts = [];
   const walk = (node) => {
@@ -20,49 +23,33 @@ function extractOutputText(json) {
   return texts.join("");
 }
 
-function stripCodeFences(s) {
+function stripFences(s) {
   if (typeof s !== "string") return s;
   return s.replace(/^```[a-zA-Z]*\n?/m, "").replace(/```$/m, "").trim();
-}
-
-function cleanseBase64(b64) {
-  if (!b64 || typeof b64 !== "string") return b64;
-  b64 = b64.replace(/^data:application\/pdf;base64,?/i, "");
-  b64 = b64.replace(/\s+/g, "");
-  return b64;
-}
-
-function looksLikePdf(bytes) {
-  if (!bytes || bytes.length < 4) return false;
-  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
 }
 
 export default async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
+
   try {
     const form = await req.formData();
-    const prompt = form.get("prompt") || "Genera un informe en PDF.";
+    const prompt = form.get("prompt") || "Genera un informe HTML.";
     const file = form.get("file");
-
     if (!(file && typeof file === "object")) {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // Validación servidor: extensión y tamaño
-    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+    // Validación servidor
+    const MAX_BYTES = 20 * 1024 * 1024;
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
     const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-    if (!allowed.has(ext)) {
-      return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
-    }
-    if (typeof file.size === "number" && file.size > MAX_BYTES) {
-      return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
-    }
+    if (!allowed.has(ext)) return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
+    if (typeof file.size === "number" && file.size > MAX_BYTES) return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
 
-    // 1) Subir a OpenAI Files API
+    // 1) Subir a Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
     uploadForm.append("purpose", "user_data");
@@ -78,22 +65,22 @@ export default async (req) => {
     }
     const { id: fileId } = await filesResp.json();
 
-    // 2) Responses API con text.format (json_schema) — filename y base64 requeridos
+    // 2) Pedir HTML estricto (no PDF) usando text.format con json_schema
     const body = {
       model: "gpt-4.1-mini",
       max_output_tokens: 200000,
       text: {
         format: {
           type: "json_schema",
-          name: "pdf_payload",
+          name: "report_html_payload",
           schema: {
             type: "object",
             additionalProperties: false,
             properties: {
-              filename: { type: "string", description: "Nombre del PDF, ej. InsightSimple-Reporte.pdf" },
-              base64: { type: "string", description: "PDF en Base64 sin prefijos ni saltos" }
+              title: { type: "string", description: "Título del informe" },
+              html:  { type: "string", description: "Documento HTML completo (<!DOCTYPE html> ... </html>)" }
             },
-            required: ["filename", "base64"] // <- agregado 'filename'
+            required: ["html", "title"]
           }
         }
       },
@@ -105,9 +92,11 @@ export default async (req) => {
               type: "input_text",
               text:
                 `${prompt}\n\n` +
-                `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks). ` +
-                `Incluye siempre las claves "filename" y "base64". ` +
-                `Asegúrate de que el PDF sea válido y esté codificado en Base64 sin prefijos (sin 'data:...') ni saltos de línea.`
+                `**FORMATO DE SALIDA**: Responde SOLO un JSON que cumpla el schema con "title" y "html". ` +
+                `El campo "html" DEBE ser un documento HTML completo, con estilos inline (sin assets externos), ` +
+                `incluyendo portada, resumen ejecutivo, KPIs (tablas), 2-3 gráficos como SVG/HTML (no imágenes remotas), ` +
+                `insights y recomendaciones, y página final con próximos pasos. ` +
+                `El HTML debe ser apto para impresión A4 (usa CSS @page si querés). Idioma: español.`
             },
             { type: "input_file", file_id: fileId },
           ],
@@ -129,37 +118,50 @@ export default async (req) => {
     }
     const json = await resp.json();
 
-    // Extraer texto con el JSON y parsearlo
+    // 3) Extraer y validar JSON con { title, html }
     let out = extractOutputText(json) || "";
-    out = stripCodeFences(out);
+    out = stripFences(out);
 
     let data;
     try { data = JSON.parse(out); }
     catch {
-      return new Response("El modelo no devolvió JSON válido con el PDF en base64.", { status: 502 });
+      return new Response("El modelo no devolvió JSON válido con {title, html}.", { status: 502 });
+    }
+    const title = (data.title && typeof data.title === "string") ? data.title.trim() : "InsightSimple - Reporte";
+    const html  = (data.html  && typeof data.html  === "string") ? data.html.trim()  : "";
+
+    if (!html || !html.toLowerCase().includes("</html>")) {
+      return new Response("El modelo no devolvió un documento HTML completo.", { status: 502 });
     }
 
-    const filename = (typeof data.filename === "string" && data.filename.trim())
-      ? data.filename.trim()
-      : "InsightSimple-Reporte.pdf";
+    // 4) Renderizar HTML -> PDF con puppeteer-core + @sparticuz/chromium
+    const exePath = await chromium.executablePath();
 
-    let base64 = cleanseBase64(data.base64);
-    if (!base64) {
-      return new Response("Respuesta sin base64 utilizable.", { status: 502 });
-    }
+    const browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: exePath,
+      headless: chromium.headless,
+    });
 
-    let bytes;
+    let pdfBytes;
     try {
-      bytes = Buffer.from(base64, "base64");
-    } catch {
-      return new Response("Base64 inválido recibido del modelo.", { status: 502 });
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: ["load", "domcontentloaded", "networkidle0"] });
+      pdfBytes = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: { top: "14mm", right: "12mm", bottom: "16mm", left: "12mm" }
+      });
+      await page.close();
+    } finally {
+      await browser.close();
     }
 
-    if (!looksLikePdf(bytes)) {
-      return new Response("El contenido devuelto no parece ser un PDF válido.", { status: 502 });
-    }
+    const safe = title.replace(/[^a-z0-9\-_. ]/gi, "").replace(/\s+/g, "-");
+    const filename = `${safe || "InsightSimple-Reporte"}.pdf`;
 
-    return new Response(bytes, {
+    return new Response(pdfBytes, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
