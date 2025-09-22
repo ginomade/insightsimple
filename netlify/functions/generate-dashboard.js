@@ -22,13 +22,11 @@ function extractOutputText(json) {
 
 function stripCodeFences(s) {
   if (typeof s !== "string") return s;
-  // quita ```json ... ``` o ``` ... ```
   return s.replace(/^```[a-zA-Z]*\n?/m, "").replace(/```$/m, "").trim();
 }
 
 function cleanseBase64(b64) {
   if (!b64 || typeof b64 !== "string") return b64;
-  // quita prefijos data-uri y espacios/saltos
   b64 = b64.replace(/^data:application\/pdf;base64,?/i, "");
   b64 = b64.replace(/\s+/g, "");
   return b64;
@@ -36,8 +34,7 @@ function cleanseBase64(b64) {
 
 function looksLikePdf(bytes) {
   if (!bytes || bytes.length < 4) return false;
-  // %PDF
-  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
 }
 
 export default async (req) => {
@@ -65,7 +62,7 @@ export default async (req) => {
       return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
     }
 
-    // 1) Subir a Files API (purpose actualizado)
+    // 1) Subir a OpenAI Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
     uploadForm.append("purpose", "user_data");
@@ -81,24 +78,22 @@ export default async (req) => {
     }
     const { id: fileId } = await filesResp.json();
 
-    // 2) Responses API con text.format (json_schema)
+    // 2) Responses API con text.format (json_schema) — name requerido al mismo nivel
     const body = {
       model: "gpt-4.1-mini",
       max_output_tokens: 200000,
       text: {
         format: {
           type: "json_schema",
-          json_schema: {
-            name: "pdf_payload",
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                filename: { type: "string" },
-                base64: { type: "string", description: "PDF en Base64 sin prefijos ni saltos" }
-              },
-              required: ["base64"]
-            }
+          name: "pdf_payload",               // <- requerido
+          schema: {                          // <- schema directo aquí
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              filename: { type: "string" },
+              base64: { type: "string", description: "PDF en Base64 sin prefijos ni saltos" }
+            },
+            required: ["base64"]
           }
         }
       },
