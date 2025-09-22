@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InsightSimple - Tu Dashboard Inteligente</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #f7f9fc;
+      color: #333;
+    }
+
+    header {
+      background: #1b1f3a;
+      color: #fff;
+      padding: 40px 20px;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 2.5em;
+    }
+
+    header p {
+      font-size: 1.2em;
+      margin: 15px 0 30px;
+    }
+
+    .cta-button {
+      padding: 15px 25px;
+      font-size: 1em;
+      color: #fff;
+      background: #4c8aff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .cta-button:hover {
+      background: #3a6fd8;
+    }
+
+    section {
+      padding: 50px 20px;
+      max-width: 900px;
+      margin: auto;
+    }
+
+    .benefits, .testimonial {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .card {
+      flex: 1;
+      min-width: 250px;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .dashboard {
+      text-align: center;
+    }
+
+    .dashboard img {
+      width: 80%;
+      max-width: 600px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+
+    footer {
+      background: #1b1f3a;
+      color: white;
+      text-align: center;
+      padding: 30px 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>InsightSimple</h1>
+    <p>Sube tu planilla. Obtén insights. Toma decisiones inteligentes.</p>
+    <button class="cta-button" id="uploadBtn">Subir documento</button>
+    <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.pdf,.json,.txt" style="display:none" />
+    <p id="status" style="margin-top:12px; opacity:.9"></p>
+  </header>
+
+  <section>
+    <h2>¿Por qué usar InsightSimple?</h2>
+    <div class="benefits">
+      <div class="card">
+        <h3>Fácil de usar</h3>
+        <p>Sube tu archivo y recibe un dashboard listo para analizar, sin configuraciones complicadas.</p>
+      </div>
+      <div class="card">
+        <h3>Insights automáticos</h3>
+        <p>Nuestra IA detecta tendencias, alertas y recomendaciones claves.</p>
+      </div>
+      <div class="card">
+        <h3>Ahorra tiempo</h3>
+        <p>Olvídate de perder horas analizando hojas de cálculo. Nosotros lo hacemos por ti.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="dashboard">
+    <h2>Así se ve tu dashboard</h2>
+    <img src="https://dummyimage.com/600x400/cccccc/000000&text=Ejemplo+de+Dashboard" alt="Dashboard ejemplo">
+  </section>
+
+  <section>
+    <h2>Lo que dicen nuestros usuarios</h2>
+    <div class="testimonial">
+      <div class="card">
+        <p>“InsightSimple cambió la forma en que manejo mi negocio. Todo es mucho más claro ahora.”</p>
+        <strong>- Mariana, Dueña de cafetería</strong>
+      </div>
+      <div class="card">
+        <p>“Subí mi Excel y en segundos tenía métricas que antes me tomaban horas.”</p>
+        <strong>- Pedro, Consultor financiero</strong>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>&copy; 2025 InsightSimple. Todos los derechos reservados.</p>
+  </footer>
+
+
+
+  <script>
+  // Flujo único: usar Function de Netlify
+  const uploadBtn = document.getElementById('uploadBtn');
+  const fileInput = document.getElementById('fileInput');
+  const statusEl = document.getElementById('status');
+
+  const DEFAULT_PROMPT = `Eres un analista de negocio y diseñador de presentaciones. A partir del documento adjunto (planilla o PDF), genera un dashboard en formato PowerPoint (.pptx) con 6-10 diapositivas que incluya: portada, resumen ejecutivo, KPIs clave (tablas), 2-3 gráficos (línea/barras/pie), insights y recomendaciones accionables, y una última slide con próximos pasos. Usa títulos claros y notas del presentador con explicaciones. Si los datos no alcanzan, indica supuestos. Idioma: español.`;
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    try {
+      statusEl.textContent = 'Procesando documento con IA…';
+      uploadBtn.disabled = true;
+
+      const form = new FormData();
+      form.append('file', file);
+      form.append('prompt', DEFAULT_PROMPT);
+
+      const resp = await fetch('/.netlify/functions/generate-dashboard', {
+        method: 'POST',
+        body: form
+      });
+
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(msg || 'Error en la generación de la presentación');
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      a.href = url;
+      a.download = `InsightSimple-Dashboard-${ts}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      statusEl.textContent = 'Presentación generada ✅';
+    } catch (e) {
+      console.error(e);
+      statusEl.textContent = 'Ups, no se pudo generar el PPT. Reintentá o consultá la consola.';
+    } finally {
+      uploadBtn.disabled = false;
+      fileInput.value = '';
+    }
+  });
+</script>
+</body>
+</html>
