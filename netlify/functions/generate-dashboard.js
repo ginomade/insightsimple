@@ -93,7 +93,7 @@ export default async (req) => {
               text:
                 `${prompt}\n\n` +
                 `**FORMATO DE SALIDA**: Responde SOLO un JSON que cumpla el schema con "title" y "html". ` +
-                `El campo "html" DEBE ser un documento HTML completo, con estilos inline (sin assets externos), ` +
+                `El campo "html" DEBE ser un documento HTML completo, no mas de 3 páginas, con estilos inline (sin assets externos), ` +
                 `incluyendo portada, resumen ejecutivo, KPIs (tablas), 2-3 gráficos como SVG/HTML (no imágenes remotas), ` +
                 `insights y recomendaciones, y página final con próximos pasos. ` +
                 `El HTML debe ser apto para impresión A4 (usa CSS @page si querés). Idioma: español.`
