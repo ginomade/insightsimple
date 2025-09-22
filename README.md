@@ -1,25 +1,25 @@
-# InsightSimple — Repo GitHub (v2: validación cliente/servidor)
+# InsightSimple — SaaS 2025 Edition
 
-Este repo incluye validación de tipo y tamaño **en el cliente y en el servidor** (PDF/XLSX/XLS, ≤20MB).
+UI renovada (dropzone, toasts, spinner), validación en cliente/servidor y Functions (Node base64).
 
-## Uso local
+## Local
 ```bash
 npm i
 npm run dev
-# abrir http://localhost:8888
+# http://localhost:8888
 ```
 
 ## Deploy desde GitHub
 1. Subí este repo a GitHub.
-2. En Netlify: **Add new site → Import from Git**.
+2. Netlify → **Add new site → Import from Git**.
 3. Configurá:
    - Build command: *(vacío)*
    - Publish directory: `.`
    - Functions directory: `netlify/functions`
-4. **Environment variables**: agregá `OPENAI_API_KEY`.
+4. **Environment variables**: `OPENAI_API_KEY`.
 5. Verificá:
    - `/.netlify/functions/hello` → JSON ok
-   - `/.netlify/functions/generate-dashboard` → GET debe dar 405 (existe)
-6. En la landing, probá **Subir documento** con `.pdf` o `.xlsx/.xls` ≤ 20MB.
+   - `/.netlify/functions/generate-dashboard` → GET devuelve 405
+6. Subí un **PDF/Excel ≤ 20MB** y recibí el **.pptx**.
 
-Generado: 2025-09-22T14:56:51.654540
+— Generado: 2025-09-22T17:10:48.677419

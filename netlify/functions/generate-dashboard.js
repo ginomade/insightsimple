@@ -3,6 +3,7 @@ export default async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
+
   try {
     const form = await req.formData();
     const prompt = form.get("prompt") || "Genera un dashboard en PPT.";
@@ -12,8 +13,8 @@ export default async (req) => {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // Validación servidor: extensión y tamaño
-    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+    // Server-side validation
+    const MAX_BYTES = 20 * 1024 * 1024;
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
     const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
@@ -24,7 +25,7 @@ export default async (req) => {
       return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
     }
 
-    // 1) Subir archivo a OpenAI Files API
+    // 1) Upload to OpenAI Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
     uploadForm.append("purpose", "responses");
@@ -41,7 +42,7 @@ export default async (req) => {
     const filesJson = await filesResp.json();
     const fileId = filesJson.id;
 
-    // 2) Llamar Responses API pidiendo PPTX como base64 en JSON
+    // 2) Ask Responses API for PPTX base64
     const body = {
       model: "gpt-4.1-mini",
       input: [
@@ -76,7 +77,7 @@ export default async (req) => {
     }
     const json = await resp.json();
 
-    // Extraer texto con el JSON del PPTX
+    // Extract text containing the JSON
     const texts = [];
     for (const item of json.output ?? []) {
       if (item.type === "message") {
@@ -98,7 +99,8 @@ export default async (req) => {
       return new Response("Respuesta sin campo base64. Ajustá el prompt o el modelo.", { status: 500 });
     }
 
-    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    // Node-safe base64 handling (Buffer)
+    const bytes = Buffer.from(base64, "base64");
     return new Response(bytes, {
       status: 200,
       headers: {
@@ -111,4 +113,3 @@ export default async (req) => {
     return new Response("Error interno en generate-dashboard", { status: 500 });
   }
 };
-export const config = { path: "/.netlify/functions/generate-dashboard" };

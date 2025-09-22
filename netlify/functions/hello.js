@@ -5,4 +5,3 @@ export default async () => {
     headers: { "Content-Type": "application/json" }
   });
 };
-export const config = { path: "/.netlify/functions/hello" };

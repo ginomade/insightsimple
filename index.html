@@ -1,142 +1,276 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>InsightSimple - Tu Dashboard Inteligente</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InsightSimple — Dashboard IA en PPT</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <style>
-    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #f7f9fc; color: #333; }
-    header { background: #1b1f3a; color: #fff; padding: 40px 20px; text-align: center; }
-    header h1 { margin: 0; font-size: 2.5em; }
-    header p { font-size: 1.2em; margin: 15px 0 30px; }
-    .cta-button { padding: 15px 25px; font-size: 1em; color: #fff; background: #4c8aff; border: none; border-radius: 5px; cursor: pointer; transition: background 0.3s; }
-    .cta-button:hover { background: #3a6fd8; }
-    section { padding: 50px 20px; max-width: 900px; margin: auto; }
-    .benefits, .testimonial { display: flex; flex-wrap: wrap; gap: 20px; }
-    .card { flex: 1; min-width: 250px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .dashboard { text-align: center; }
-    .dashboard img { width: 80%; max-width: 600px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-    footer { background: #1b1f3a; color: white; text-align: center; padding: 30px 20px; }
-    .muted { color:#6b7280; font-size:.9em; }
+    :root {
+      --bg: #0b1020;
+      --card: #121735;
+      --muted: #9aa4c7;
+      --text: #e6e9f7;
+      --primary: #6ea8fe;
+      --primary-strong: #4c8aff;
+      --accent: #a48bfe;
+      --success: #3ddc97;
+      --danger: #ff6b6b;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      background: radial-gradient(1200px 1200px at 10% 10%, #1b1f3a 0%, #0b1020 45%, #090d1c 100%);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    header {
+      padding: 56px 24px 32px;
+      text-align: center;
+    }
+    .brand {
+      display: inline-flex; gap: 12px; align-items: center; margin-bottom: 12px;
+    }
+    .logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      box-shadow: var(--shadow);
+    }
+    h1 { font-size: 42px; margin: 8px 0 12px; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 18px; max-width: 800px; margin: 0 auto; }
+    main { max-width: 980px; margin: 24px auto 80px; padding: 0 20px; }
+    .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      backdrop-filter: blur(8px);
+    }
+    .card h2 { margin-top: 0; font-size: 18px; color: #dbe3ff; letter-spacing: 0.02em; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+    .kpi {
+      background: rgba(255,255,255,0.04);
+      border: 1px dashed rgba(255,255,255,0.08);
+      border-radius: 14px; padding: 14px;
+    }
+    .kpi label { display:block; color:#b9c5ef; font-size:12px; margin-bottom: 4px; }
+    .kpi strong { font-size: 18px; }
+
+    /* Dropzone */
+    .dz {
+      margin-top: 10px;
+      border: 2px dashed rgba(255,255,255,0.18);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      transition: border-color .2s, background .2s;
+      background: rgba(255,255,255,0.03);
+    }
+    .dz.dragover { border-color: var(--primary); background: rgba(78,129,255,0.08); }
+    .dz input[type=file] { display: none; }
+    .dz .hint { color: var(--muted); font-size: 14px; }
+    .actions { display: flex; gap: 10px; margin-top: 14px; justify-content: center; }
+    .btn {
+      appearance: none; border: 0; border-radius: 12px; padding: 12px 16px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+      color: white; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+      transition: transform .05s ease, filter .2s ease;
+    }
+    .btn:disabled { filter: grayscale(0.5) brightness(0.8); cursor: not-allowed; }
+    .btn:active { transform: translateY(1px); }
+    .ghost { background: rgba(255,255,255,0.08); color: #dbe3ff; }
+
+    .status { margin-top: 10px; min-height: 22px; }
+    .status .ok { color: var(--success); }
+    .status .err { color: var(--danger); }
+
+    /* Spinner */
+    .spinner {
+      width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.25);
+      border-top-color: white; border-radius: 50%; display: inline-block;
+      animation: spin 1s linear infinite; vertical-align: middle; margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toasts */
+    .toasts {
+      position: fixed; top: 18px; right: 18px; display: flex; flex-direction: column; gap: 10px; z-index: 9999;
+    }
+    .toast {
+      background: rgba(16,21,45,0.9); color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 12px 14px; border-radius: 12px; box-shadow: var(--shadow);
+      min-width: 240px;
+    }
+    .toast.ok { border-color: rgba(61,220,151,0.6); }
+    .toast.err { border-color: rgba(255,107,107,0.6); }
+
+    footer { text-align: center; color: var(--muted); padding: 28px 14px; }
   </style>
 </head>
 <body>
+  <div class="toasts" id="toasts"></div>
+
   <header>
-    <h1>InsightSimple</h1>
-    <p>Sube tu planilla. Obtén insights. Toma decisiones inteligentes.</p>
-    <button class="cta-button" id="uploadBtn">Subir documento</button>
-    <input id="fileInput" type="file" accept=".pdf,.xlsx,.xls" style="display:none" />
-    <p id="status" class="muted" style="margin-top:12px;"></p>
+    <div class="brand">
+      <div class="logo"></div>
+      <strong>InsightSimple</strong>
+    </div>
+    <h1>Subí tu documento. Recibí un <em>PPT</em> con insights.</h1>
+    <p class="subtitle">PDF o Excel (hasta 20 MB). Generamos un dashboard con KPIs, gráficos y recomendaciones claras para decidir sin drama.</p>
   </header>
 
-  <section>
-    <h2>¿Por qué usar InsightSimple?</h2>
-    <div class="benefits">
-      <div class="card">
-        <h3>Fácil de usar</h3>
-        <p>Sube tu archivo y recibe un dashboard listo para analizar, sin configuraciones complicadas.</p>
+  <main class="grid">
+    <section class="card">
+      <h2>Tu archivo</h2>
+      <div class="dz" id="dropzone">
+        <p class="hint">Arrastrá y soltá tu PDF/Excel aquí, o</p>
+        <div class="actions">
+          <label class="btn ghost" for="fileInput">Elegir archivo</label>
+          <button class="btn" id="uploadBtn">Generar dashboard</button>
+        </div>
+        <input id="fileInput" type="file" accept=".pdf,.xlsx,.xls" />
+        <div class="status" id="status"></div>
       </div>
-      <div class="card">
-        <h3>Insights automáticos</h3>
-        <p>Nuestra IA detecta tendencias, alertas y recomendaciones claves.</p>
-      </div>
-      <div class="card">
-        <h3>Ahorra tiempo</h3>
-        <p>Olvídate de perder horas analizando hojas de cálculo. Nosotros lo hacemos por ti.</p>
-      </div>
-    </div>
-  </section>
+      <details style="margin-top:16px;">
+        <summary class="muted">Opciones avanzadas (prompt)</summary>
+        <textarea id="prompt" style="width:100%; min-height:120px; margin-top:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: var(--text); padding:10px;">Eres un analista de negocio y diseñador de presentaciones. A partir del documento adjunto (PDF/Excel), genera un dashboard en formato PowerPoint (.pptx) con 6-10 diapositivas que incluya: portada, resumen ejecutivo, KPIs clave (tablas), 2-3 gráficos (línea/barras/pie), insights y recomendaciones accionables, y una última slide con próximos pasos. Usa títulos claros y notas del presentador con explicaciones. Si los datos no alcanzan, indica supuestos. Idioma: español.</textarea>
+      </details>
+    </section>
 
-  <section class="dashboard">
-    <h2>Así se ve tu dashboard</h2>
-    <img src="https://dummyimage.com/600x400/cccccc/000000&text=Ejemplo+de+Dashboard" alt="Dashboard ejemplo">
-  </section>
-
-  <section>
-    <h2>Lo que dicen nuestros usuarios</h2>
-    <div class="testimonial">
-      <div class="card">
-        <p>“InsightSimple cambió la forma en que manejo mi negocio. Todo es mucho más claro ahora.”</p>
-        <strong>- Mariana, Dueña de cafetería</strong>
+    <aside class="card">
+      <h2>Preview</h2>
+      <div class="kpis">
+        <div class="kpi"><label>Tiempo ahorrado</label><strong>~2h</strong></div>
+        <div class="kpi"><label>Slides generadas</label><strong>6–10</strong></div>
+        <div class="kpi"><label>Formatos</label><strong>PPTX</strong></div>
       </div>
-      <div class="card">
-        <p>“Subí mi Excel y en segundos tenía métricas que antes me tomaban horas.”</p>
-        <strong>- Pedro, Consultor financiero</strong>
-      </div>
-    </div>
-  </section>
+      <p class="muted" style="margin-top:12px">El PPT se descarga automáticamente al terminar. Nada se guarda en nuestros servidores: procesamiento efímero vía función serverless.</p>
+    </aside>
+  </main>
 
-  <footer>
-    <p>&copy; 2025 InsightSimple. Todos los derechos reservados.</p>
-  </footer>
+  <footer>© 2025 InsightSimple</footer>
 
   <script>
-    const uploadBtn = document.getElementById('uploadBtn');
+    const toasts = document.getElementById('toasts');
+    function toast(msg, type='ok', timeout=3500){
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      t.textContent = msg;
+      toasts.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; setTimeout(()=> t.remove(), 300); }, timeout);
+    }
+
     const fileInput = document.getElementById('fileInput');
+    const uploadBtn = document.getElementById('uploadBtn');
     const statusEl = document.getElementById('status');
+    const dropzone = document.getElementById('dropzone');
 
-    const DEFAULT_PROMPT = `Eres un analista de negocio y diseñador de presentaciones. A partir del documento adjunto (planilla o PDF), genera un dashboard en formato PowerPoint (.pptx) con 6-10 diapositivas que incluya: portada, resumen ejecutivo, KPIs clave (tablas), 2-3 gráficos (línea/barras/pie), insights y recomendaciones accionables, y una última slide con próximos pasos. Usa títulos claros y notas del presentador con explicaciones. Si los datos no alcanzan, indica supuestos. Idioma: español.`;
+    let currentFile = null;
 
-    uploadBtn.addEventListener('click', () => fileInput.click());
-
-    fileInput.addEventListener('change', async () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
-
-      // Validación cliente: solo PDF o Excel, hasta 20 MB
-      const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
-      const allowedExt = new Set(["pdf", "xlsx", "xls"]);
-      const name = file.name || "";
-      const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-
-      if (!allowedExt.has(ext)) {
-        statusEl.textContent = "Formato no permitido. Solo PDF o Excel (.pdf, .xlsx, .xls).";
-        fileInput.value = "";
-        return;
+    function validate(file){
+      const MAX_BYTES = 20 * 1024 * 1024; // 20MB
+      const allowed = new Set(['pdf','xlsx','xls']);
+      const name = file?.name || '';
+      const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+      if (!allowed.has(ext)) {
+        throw new Error('Formato no permitido. Solo PDF o Excel (.pdf, .xlsx, .xls).');
       }
       if (file.size > MAX_BYTES) {
-        statusEl.textContent = "Archivo demasiado grande. Máximo permitido: 20 MB.";
-        fileInput.value = "";
-        return;
+        throw new Error('Archivo demasiado grande. Máximo permitido: 20 MB.');
       }
+    }
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        validate(file);
+        currentFile = file;
+        statusEl.innerHTML = '✔ Archivo listo: <strong>' + file.name + '</strong> (' + (file.size/1024/1024).toFixed(2) + ' MB)';
+      } catch (e) {
+        statusEl.innerHTML = '<span class="err">' + e.message + '</span>';
+        fileInput.value = '';
+        currentFile = null;
+      }
+    });
+
+    ;['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover');
+    }));
+    ;['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover');
+    }));
+    dropzone.addEventListener('drop', (e)=>{
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      try {
+        validate(file);
+        currentFile = file;
+        statusEl.innerHTML = '✔ Archivo listo: <strong>' + file.name + '</strong> (' + (file.size/1024/1024).toFixed(2) + ' MB)';
+      } catch (err) {
+        statusEl.innerHTML = '<span class="err">' + err.message + '</span>';
+        currentFile = null;
+      }
+    });
+
+    async function generate(){
+      const file = currentFile || fileInput.files?.[0];
+      if (!file) { toast('Subí un PDF o Excel primero.', 'err'); return; }
 
       try {
-        statusEl.textContent = "Procesando documento con IA…";
+        validate(file);
+        const userPrompt = document.getElementById('prompt').value.trim();
         uploadBtn.disabled = true;
+        const oldLabel = uploadBtn.textContent;
+        uploadBtn.innerHTML = '<span class="spinner"></span>Generando...';
+        statusEl.textContent = 'Procesando documento con IA…';
 
         const form = new FormData();
-        form.append("file", file);
-        form.append("prompt", DEFAULT_PROMPT);
+        form.append('file', file);
+        form.append('prompt', userPrompt);
 
-        const resp = await fetch("/.netlify/functions/generate-dashboard", {
-          method: "POST",
+        const resp = await fetch('/.netlify/functions/generate-dashboard', {
+          method: 'POST',
           body: form
         });
 
         if (!resp.ok) {
-          const msg = await resp.text();
-          throw new Error(msg || "Error en la generación de la presentación");
+          const txt = await resp.text();
+          throw new Error(txt || 'Error en la generación de la presentación');
         }
 
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        const a = document.createElement('a');
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
         a.href = url;
         a.download = `InsightSimple-Dashboard-${ts}.pptx`;
         document.body.appendChild(a);
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        statusEl.textContent = "Presentación generada ✅";
-      } catch (e) {
-        console.error(e);
-        statusEl.textContent = "Ups, no se pudo generar el PPT. Reintentá o consultá la consola.";
+        statusEl.innerHTML = '<span class="ok">Presentación generada ✅</span>';
+        toast('Dashboard generado y descargado.', 'ok');
+      } catch (err) {
+        console.error(err);
+        statusEl.innerHTML = '<span class="err">' + err.message + '</span>';
+        toast(err.message, 'err');
       } finally {
         uploadBtn.disabled = false;
-        fileInput.value = "";
+        uploadBtn.textContent = 'Generar dashboard';
       }
-    });
+    }
+
+    document.getElementById('uploadBtn').addEventListener('click', generate);
   </script>
 </body>
 </html>
