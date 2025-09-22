@@ -3,18 +3,17 @@ export default async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-
   try {
     const form = await req.formData();
-    const prompt = form.get("prompt") || "Genera un dashboard en PPT.";
+    const prompt = form.get("prompt") || "Genera un informe en PDF.";
     const file = form.get("file");
 
     if (!(file && typeof file === "object")) {
       return new Response("Falta el archivo", { status: 400 });
     }
 
-    // Server-side validation
-    const MAX_BYTES = 20 * 1024 * 1024;
+    // Validación servidor: extensión y tamaño
+    const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
     const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
@@ -25,10 +24,10 @@ export default async (req) => {
       return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
     }
 
-    // 1) Upload to OpenAI Files API
+    // 1) Subir a OpenAI Files API
     const uploadForm = new FormData();
     uploadForm.append("file", file);
-    uploadForm.append("purpose", "user_data");
+    uploadForm.append("purpose", "user_data"); // actualizado
 
     const filesResp = await fetch("https://api.openai.com/v1/files", {
       method: "POST",
@@ -42,7 +41,7 @@ export default async (req) => {
     const filesJson = await filesResp.json();
     const fileId = filesJson.id;
 
-    // 2) Ask Responses API for PPTX base64
+    // 2) Pedir PDF a Responses API (base64 dentro de JSON)
     const body = {
       model: "gpt-4.1-mini",
       input: [
@@ -53,8 +52,8 @@ export default async (req) => {
               type: "input_text",
               text:
                 `${prompt}\n\n` +
-                `IMPORTANTE: devolvé únicamente un objeto JSON con la forma { "filename": "dashboard.pptx", "base64": "<...>" } ` +
-                `donde "base64" es el contenido del PPTX en Base64 sin prefijos. ` +
+                `IMPORTANTE: devolvé únicamente un objeto JSON con la forma { "filename": "reporte.pdf", "base64": "<...>" } ` +
+                `donde "base64" es el contenido del PDF en Base64 sin prefijos. ` +
                 `No incluyas texto adicional fuera del JSON.`,
             },
             { type: "input_file", file_id: fileId },
@@ -77,7 +76,7 @@ export default async (req) => {
     }
     const json = await resp.json();
 
-    // Extract text containing the JSON
+    // Extraer texto con el JSON
     const texts = [];
     for (const item of json.output ?? []) {
       if (item.type === "message") {
@@ -90,21 +89,20 @@ export default async (req) => {
     const out = texts.join("");
     let data;
     try { data = JSON.parse(out); } catch {
-      return new Response("El modelo no devolvió JSON válido con el PPTX en base64.", { status: 500 });
+      return new Response("El modelo no devolvió JSON válido con el PDF en base64.", { status: 500 });
     }
 
-    const filename = data.filename || "InsightSimple-Dashboard.pptx";
+    const filename = data.filename || "InsightSimple-Reporte.pdf";
     const base64 = data.base64;
     if (!base64) {
       return new Response("Respuesta sin campo base64. Ajustá el prompt o el modelo.", { status: 500 });
     }
 
-    // Node-safe base64 handling (Buffer)
     const bytes = Buffer.from(base64, "base64");
     return new Response(bytes, {
       status: 200,
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
