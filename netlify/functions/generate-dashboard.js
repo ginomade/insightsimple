@@ -78,42 +78,45 @@ export default async (req) => {
     const { id: fileId } = await filesResp.json();
 
     // 2) Responses API con JSON Schema estricto
-    const responseFormat = {
-      type: "json_schema",
-      json_schema: {
-        name: "pdf_payload",
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            filename: { type: "string" },
-            base64: { type: "string", description: "PDF en Base64, sin prefijos" }
-          },
-          required: ["base64"]
-        }
-      }
-    };
+    // 1) Definí el esquema JSON
+const textFormat = {
+  format: "json_schema",
+  json_schema: {
+    name: "pdf_payload",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        filename: { type: "string" },
+        base64: { type: "string", description: "PDF en Base64 sin prefijos" }
+      },
+      required: ["base64"]
+    }
+  }
+};
 
-    const body = {
-      model: "gpt-4.1-mini",
-      max_output_tokens: 200000,
-      response_format: responseFormat,
-      input: [
+// 2) Armá el body usando text.format
+const body = {
+  model: "gpt-4.1-mini",
+  max_output_tokens: 200000,
+  text: textFormat,                          // <- acá va ahora
+  input: [
+    {
+      role: "user",
+      content: [
         {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text:
-                `${prompt}\n\n` +
-                `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks).\n` +
-                `Asegúrate de que el PDF sea válido y codificado en Base64 sin saltos de línea ni prefijos.`
-            },
-            { type: "input_file", file_id: fileId }
-          ],
+          type: "input_text",
+          text:
+            `${prompt}\n\n` +
+            `SALIDA OBLIGATORIA: responde SOLO un JSON válido que cumpla el schema (sin markdown, sin backticks).\n` +
+            `Asegúrate de que el PDF sea válido y codificado en Base64 sin saltos de línea ni prefijos.`
         },
+        { type: "input_file", file_id: fileId }
       ],
-    };
+    },
+  ],
+};
+
 
     const resp = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
