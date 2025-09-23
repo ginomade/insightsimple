@@ -192,7 +192,7 @@ Las secciones deben ser concisas: el PDF final tendrá máximo 3 páginas A4.`;
 
     // normalizar campos
     const title = (data.title || "InsightSimple — Reporte").toString().trim();
-    const summary = (data.executive_summary || "").toString().trim();
+    const summary = rawOut; //(data.executive_summary || "").toString().trim();
     const kpis = Array.isArray(data.kpis) ? data.kpis.slice(0, 6) : [];
     const insights = Array.isArray(data.insights) ? data.insights.slice(0, 8) : [];
     const recs = Array.isArray(data.recommendations) ? data.recommendations.slice(0, 8) : [];
