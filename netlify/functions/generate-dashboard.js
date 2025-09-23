@@ -3,9 +3,11 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const OPENAI_URL = "https://api.openai.com/v1";
 
-// -------- utilidades de extracción / saneado ----------
-// --- utilidades robustas para parsear la salida del modelo ---
+/* ============================================================
+   Utilidades robustas para extraer y parsear la salida del modelo
+   ============================================================ */
 
+// Extrae cualquier output_text de la Responses API
 function extractOutputText(json) {
   const texts = [];
   const walk = (node) => {
@@ -14,7 +16,9 @@ function extractOutputText(json) {
     if (typeof node === "object") {
       if (node.type === "output_text" && typeof node.text === "string") texts.push(node.text);
       if (node.type === "message" && Array.isArray(node.content)) {
-        node.content.forEach((c) => { if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text); });
+        node.content.forEach((c) => {
+          if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text);
+        });
       }
       for (const k in node) walk(node[k]);
     }
@@ -23,13 +27,25 @@ function extractOutputText(json) {
   return texts.join("");
 }
 
+// Quita fences de markdown (```json ... ```)
 function stripFences(s) {
   if (typeof s !== "string") return s;
-  // quita ```json ... ``` o ```
   return s.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "").trim();
 }
 
-// Extrae el PRIMER objeto JSON top-level, incluso si hay varios pegados.
+// Normaliza comillas “curvas” y espacios raros, aplana saltos de línea dentro de strings
+function normalizeWhitespaceAndQuotes(s) {
+  return s
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\r\n?/g, "\n")   // CRLF → LF
+    .replace(/\n+/g, " ")      // JSON no admite \n sueltos dentro de strings
+    .replace(/\u00A0/g, " ")   // nbsp → espacio
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// Extrae el PRIMER objeto JSON top-level, ignorando llaves dentro de strings
 function extractFirstTopLevelObjectBlock(s) {
   let inStr = false, esc = false, depth = 0, start = -1;
   for (let i = 0; i < s.length; i++) {
@@ -56,37 +72,23 @@ function extractFirstTopLevelObjectBlock(s) {
 }
 
 function removeTrailingCommas(s) {
-  // ", }" o ", ]" → quitamos la coma
   return s.replace(/,\s*([}\]])/g, "$1").replace(/:\s*,/g, ":");
 }
 
 function quoteBareKeys(s) {
-  // Añade comillas a claves simples no entrecomilladas: { foo: 1 } -> { "foo": 1 }
-  // (Heurístico; asume que no estamos dentro de strings gracias al escáner previo)
+  // { foo: 1 } -> { "foo": 1 }
   return s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
 }
 
-function normalizeWhitespaceAndQuotes(s) {
-  return s
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\r\n?/g, "\n")   // normaliza CRLF
-    .replace(/\n+/g, " ")      // JSON no admite \n crudos dentro de strings → espacios
-    .replace(/\u00A0/g, " ")   // nbsp → espacio
-    .replace(/\s{2,}/g, " ")   // colapsar espacios
-    .trim();
-}
-
+// Parser tolerante para JSON “a pelo” del modelo
 function parseJsonLoose(raw) {
   if (!raw) throw new Error("empty");
-  // 1) limpieza básica
   let s = stripFences(raw);
   s = normalizeWhitespaceAndQuotes(s);
 
-  // 2) si la salida trae 2+ objetos pegados, agarramos el primero bien balanceado
+  // si hay varios objetos pegados, quedarnos con el primero balanceado
   let block = extractFirstTopLevelObjectBlock(s) || s;
 
-  // 3) intentos de parseo progresivos
   const attempts = [
     (x) => JSON.parse(x),
     (x) => JSON.parse(removeTrailingCommas(x)),
@@ -97,54 +99,40 @@ function parseJsonLoose(raw) {
     try { return tryParse(block); } catch (_) {}
   }
 
-  // 4) si aún falla y el bloque detectado es muy chico, intentamos con el global "s" entero
-  if (block.length < 50) {
-    const alt = extractFirstTopLevelObjectBlock(quoteBareKeys(removeTrailingCommas(s))) || s;
-    for (const tryParse of attempts) {
-      try { return tryParse(alt); } catch (_) {}
-    }
+  // último intento: aplicar fixes sobre el string completo
+  const alt = extractFirstTopLevelObjectBlock(quoteBareKeys(removeTrailingCommas(s))) || s;
+  for (const tryParse of attempts) {
+    try { return tryParse(alt); } catch (_) {}
   }
 
-  // Nada funcionó
   throw new Error("invalid_json_after_cleanup");
 }
 
+/* ============================================================
+   Render de PDF con paleta clara y alto contraste
+   ============================================================ */
 
-function normalizeQuotes(s) {
-  if (typeof s !== "string") return s;
-  // comillas “inteligentes” → ASCII
-  return s
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'");
-}
+// Paleta clara alto-contraste
+const COLOR_BG = rgb(1, 1, 1);                   // fondo blanco (implícito)
+const COLOR_TITLE = rgb(0.05, 0.06, 0.10);       // títulos casi negro
+const COLOR_TEXT = rgb(0.12, 0.14, 0.18);        // texto principal
+const COLOR_MUTED = rgb(0.32, 0.36, 0.44);       // texto secundario
+const COLOR_H2 = rgb(0.08, 0.10, 0.16);          // subtítulos
+const COLOR_KPI_BOX = rgb(0.96, 0.97, 0.98);     // relleno KPI
+const COLOR_KPI_BORDER = rgb(0.72, 0.76, 0.84);  // borde KPI
+const COLOR_KPI_LABEL = COLOR_MUTED;
+const COLOR_KPI_VALUE = rgb(0.10, 0.12, 0.18);   // valor KPI
+const COLOR_ACCENT = rgb(0.07, 0.33, 0.73);      // opcional para separadores
 
-function findLikelyJsonBlock(s) {
-  // busca el primer { ... } grande que parezca JSON
-  const first = s.indexOf("{");
-  const last = s.lastIndexOf("}");
-  if (first === -1 || last === -1 || last <= first) return null;
-  return s.slice(first, last + 1);
-}
+// Métricas tipográficas (ligero boost legibilidad)
+const TITLE_SIZE = 24;
+const H2 = 15;
+const TEXT = 11.5;
+const LINE = 15;
 
-// -------- PDF helpers ----------
-function wrapText(text, maxChars) {
-  const words = (text || "").split(/\s+/);
-  const lines = [];
-  let line = "";
-  for (const w of words) {
-    const probe = line ? line + " " + w : w;
-    if (probe.length > maxChars) {
-      if (line) lines.push(line);
-      line = w;
-    } else {
-      line = probe;
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
-// -------- handler ----------
+/* ============================================================
+   Handler Netlify Function
+   ============================================================ */
 export default async (req) => {
   try {
     if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -155,7 +143,7 @@ export default async (req) => {
     const file = form.get("file");
     if (!(file && typeof file === "object")) return new Response("Falta el archivo", { status: 400 });
 
-    // validación servidor
+    // Validación servidor
     const MAX_BYTES = 20 * 1024 * 1024;
     const allowed = new Set(["pdf", "xlsx", "xls"]);
     const name = file.name ?? "";
@@ -163,7 +151,7 @@ export default async (req) => {
     if (!allowed.has(ext)) return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
     if (typeof file.size === "number" && file.size > MAX_BYTES) return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
 
-    // prompt: pedimos JSON estructurado (no HTML ni binarios)
+    // Prompt: pedimos JSON estructurado (no HTML ni binarios)
     const limiter = `
 Responde SOLO JSON válido con esta forma EXACTA (sin markdown):
 {
@@ -179,7 +167,7 @@ Las secciones deben ser concisas: el PDF final tendrá máximo 3 páginas A4.`;
       (rawPrompt || `Eres analista de negocio. Sintetiza el documento en estructura para un reporte corto.`) +
       "\n\n" + limiter;
 
-    // 1) subir a Files API
+    // 1) Subir a Files API
     let fileId = null;
     {
       const uploadForm = new FormData();
@@ -227,7 +215,7 @@ Las secciones deben ser concisas: el PDF final tendrá máximo 3 páginas A4.`;
     }
     const json = await resp.json();
 
-    // 3) parseo tolerante del JSON
+    // 3) Parseo tolerante del JSON
     let rawOut = extractOutputText(json);
     let data;
     try {
@@ -243,81 +231,98 @@ Las secciones deben ser concisas: el PDF final tendrá máximo 3 páginas A4.`;
       };
     }
 
-    // normalizar campos
+    // 4) Componer PDF (≤ 3 páginas) con pdf-lib y paleta clara
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    const PAGE_W = 595.28;   // A4 width pt
+    const PAGE_H = 841.89;   // A4 height pt
+    const M = 42;            // margin
+
+    const addPage = () => pdfDoc.addPage([PAGE_W, PAGE_H]);
+
     const title = (data.title || "InsightSimple — Reporte").toString().trim();
-    const summary = rawOut; //(data.executive_summary || "").toString().trim();
+    const summary = (data.executive_summary || "").toString().trim();
     const kpis = Array.isArray(data.kpis) ? data.kpis.slice(0, 6) : [];
     const insights = Array.isArray(data.insights) ? data.insights.slice(0, 8) : [];
     const recs = Array.isArray(data.recommendations) ? data.recommendations.slice(0, 8) : [];
 
-    // 4) Componer PDF (≤ 3 páginas) con pdf-lib
-    const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const PAGE_W = 595.28, PAGE_H = 841.89, M = 42, LINE = 14;
-    const TITLE_SIZE = 22, H2 = 14, TEXT = 11;
-    const GRAY = rgb(0.35, 0.40, 0.55);
-
-    const addPage = () => pdfDoc.addPage([PAGE_W, PAGE_H]);
-
-    // Pag 1 — Portada + KPIs
+    // Página 1 — Portada + KPIs
     let page = addPage();
     let y = PAGE_H - M;
-    page.drawText(title, { x: M, y: y - TITLE_SIZE, size: TITLE_SIZE, font: fontBold, color: rgb(0.93, 0.95, 0.98) });
+
+    page.drawText(title, { x: M, y: y - TITLE_SIZE, size: TITLE_SIZE, font: fontBold, color: COLOR_TITLE });
     y -= (TITLE_SIZE + 14);
+
     const dateStr = new Date().toLocaleDateString("es-AR");
-    page.drawText(`Fecha: ${dateStr}`, { x: M, y: y - TEXT, size: TEXT, font, color: GRAY });
+    page.drawText(`Fecha: ${dateStr}`, { x: M, y: y - TEXT, size: TEXT, font, color: COLOR_MUTED });
     y -= (TEXT + 18);
 
-    page.drawText("KPIs estrella", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+    page.drawText("KPIs estrella", { x: M, y: y - H2, size: H2, font: fontBold, color: COLOR_H2 });
     y -= (H2 + 10);
-    const kpiCols = 2, kpiBoxW = (PAGE_W - 2*M - 16) / kpiCols, kpiBoxH = 48;
+
+    const kpiCols = 2;
+    const kpiBoxW = (PAGE_W - 2*M - 16) / kpiCols;
+    const kpiBoxH = 48;
+
     (kpis.length ? kpis : [{label:"Métrica", value:"N/A"}]).slice(0, 4).forEach((kpi, i) => {
       const row = Math.floor(i / kpiCols);
       const col = i % kpiCols;
       const x = M + col * (kpiBoxW + 16);
       const boxY = y - row * (kpiBoxH + 12);
-      page.drawRectangle({ x, y: boxY - kpiBoxH, width: kpiBoxW, height: kpiBoxH, color: rgb(0.08,0.11,0.20), borderColor: GRAY, borderWidth: 0.5, opacity: 0.9 });
-      page.drawText((kpi.label ?? "").toString(), { x: x + 10, y: boxY - 18, size: TEXT, font, color: GRAY });
-      page.drawText((kpi.value ?? "").toString(), { x: x + 10, y: boxY - 34, size: TEXT+3, font: fontBold, color: rgb(0.95,0.97,1) });
+
+      page.drawRectangle({
+        x, y: boxY - kpiBoxH, width: kpiBoxW, height: kpiBoxH,
+        color: COLOR_KPI_BOX, borderColor: COLOR_KPI_BORDER, borderWidth: 0.8
+      });
+
+      page.drawText((kpi.label ?? "").toString(), { x: x + 10, y: boxY - 18, size: TEXT, font, color: COLOR_KPI_LABEL });
+      page.drawText((kpi.value ?? "").toString(), { x: x + 10, y: boxY - 34, size: TEXT + 2.5, font: fontBold, color: COLOR_KPI_VALUE });
+
       if (i === 3) y = boxY - kpiBoxH - 16;
     });
     if (kpis.length <= 2) y -= 60;
 
-    // Pag 2 — Resumen + Insights
+    // Página 2 — Resumen + Insights
     page = addPage();
     y = PAGE_H - M;
-    page.drawText("Resumen ejecutivo", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+
+    page.drawText("Resumen ejecutivo", { x: M, y: y - H2, size: H2, font: fontBold, color: COLOR_H2 });
     y -= (H2 + 12);
+
     wrapText(summary || "Sin resumen disponible.", 90).forEach(line => {
-      page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: rgb(0.92,0.94,0.98) });
+      page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: COLOR_TEXT });
       y -= LINE;
     });
     y -= 10;
 
-    page.drawText("Insights", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+    page.drawText("Insights", { x: M, y: y - H2, size: H2, font: fontBold, color: COLOR_H2 });
     y -= (H2 + 8);
+
     (insights.length ? insights : ["Sin insights disponibles."]).forEach(b => {
       if (y < M + 40) return;
       const lines = wrapText("• " + b, 95);
       lines.forEach(line => {
         if (y < M + 40) return;
-        page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: rgb(0.92,0.94,0.98) });
+        page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: COLOR_TEXT });
         y -= LINE;
       });
     });
 
-    // Pag 3 — Recomendaciones
+    // Página 3 — Recomendaciones
     page = addPage();
     y = PAGE_H - M;
-    page.drawText("Recomendaciones", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+
+    page.drawText("Recomendaciones", { x: M, y: y - H2, size: H2, font: fontBold, color: COLOR_H2 });
     y -= (H2 + 10);
+
     (recs.length ? recs : ["Sin recomendaciones disponibles."]).forEach(b => {
       if (y < M + 40) return;
       const lines = wrapText("• " + b, 95);
       lines.forEach(line => {
-        if (y < M + 40) return;
-        page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: rgb(0.92,0.94,0.98) });
+        if (y < M + 40) return; // no crear más páginas: límite 3
+        page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: COLOR_TEXT });
         y -= LINE;
       });
     });
@@ -338,3 +343,21 @@ Las secciones deben ser concisas: el PDF final tendrá máximo 3 páginas A4.`;
     return new Response("Error interno en generate-dashboard", { status: 500 });
   }
 };
+
+// Helper: wrapText reutilizado aquí para mantener cohesión
+function wrapText(text, maxChars) {
+  const words = (text || "").split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const w of words) {
+    const probe = line ? line + " " + w : w;
+    if (probe.length > maxChars) {
+      if (line) lines.push(line);
+      line = w;
+    } else {
+      line = probe;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
