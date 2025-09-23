@@ -1,6 +1,5 @@
 // netlify/functions/generate-dashboard.js
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 function extractOutputText(json) {
   const texts = [];
@@ -8,9 +7,13 @@ function extractOutputText(json) {
     if (!node) return;
     if (Array.isArray(node)) return node.forEach(walk);
     if (typeof node === "object") {
-      if (node.type === "output_text" && typeof node.text === "string") texts.push(node.text);
+      if (node.type === "output_text" && typeof node.text === "string") {
+        texts.push(node.text);
+      }
       if (node.type === "message" && Array.isArray(node.content)) {
-        node.content.forEach((c) => { if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text); });
+        node.content.forEach((c) => {
+          if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text);
+        });
       }
       for (const k in node) walk(node[k]);
     }
@@ -24,30 +27,34 @@ function stripFences(s) {
   return s.replace(/^```[a-zA-Z]*\n?/m, "").replace(/```$/m, "").trim();
 }
 
-// Afinar Chromium para serverless
-chromium.setHeadlessMode = true;
-chromium.setGraphicsMode = false;
-
 const OPENAI_URL = "https://api.openai.com/v1";
+
+// Simple wrapped text into lines by width
+function wrapText(text, maxChars) {
+  const words = (text || "").split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const w of words) {
+    if ((line + " " + w).trim().length > maxChars) {
+      if (line) lines.push(line.trim());
+      line = w;
+    } else {
+      line = (line ? line + " " : "") + w;
+    }
+  }
+  if (line) lines.push(line.trim());
+  return lines;
+}
 
 export default async (req) => {
   try {
-    if (req.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
-    }
-
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("Falta OPENAI_API_KEY");
-      return new Response("Misconfig: falta OPENAI_API_KEY", { status: 500 });
-    }
+    if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+    if (!process.env.OPENAI_API_KEY) return new Response("Misconfig: falta OPENAI_API_KEY", { status: 500 });
 
     const form = await req.formData();
     const rawPrompt = (form.get("prompt") || "").toString();
     const file = form.get("file");
-
-    if (!(file && typeof file === "object")) {
-      return new Response("Falta el archivo", { status: 400 });
-    }
+    if (!(file && typeof file === "object")) return new Response("Falta el archivo", { status: 400 });
 
     // Validación servidor
     const MAX_BYTES = 20 * 1024 * 1024;
@@ -57,25 +64,26 @@ export default async (req) => {
     if (!allowed.has(ext)) return new Response("Solo se aceptan PDF o Excel (.pdf, .xlsx, .xls).", { status: 400 });
     if (typeof file.size === "number" && file.size > MAX_BYTES) return new Response("Archivo demasiado grande (máximo 20 MB).", { status: 413 });
 
-    // Construir prompt (máx 3 páginas)
+    // Prompt compacto: pedimos JSON estructurado (no HTML ni binarios)
     const limiter = `
-Reglas duras:
-- Máximo 3 páginas A4 (ideal: 2–3).
-- HTML completo con CSS inline (sin assets remotos).
-- Tablas y gráficos como HTML/SVG simples (sin imágenes externas).
-- Texto conciso en bullets; evita tablas enormes.
-- System fonts, sin webfonts.`;
+Requisitos estrictos:
+- Responde SOLO JSON válido con las claves solicitadas (sin markdown, sin código).
+- Máximo 3 páginas A4 en el PDF final, así que mantén el contenido conciso.
+- KPIs: como pares label + value.
+- Insights y recomendaciones: bullets cortos, accionables.`;
+
     const prompt =
-      (rawPrompt || `Eres analista de negocio y diseñador. Genera un informe HTML (no PDF) con **máximo 3 páginas A4**: 1) Portada con 3 KPIs, 2) Resumen + KPIs + 1–2 gráficos (SVG/HTML), 3) Insights + próximos pasos.`)
-      + "\n\n" + limiter;
+      (rawPrompt || `Eres analista de negocio. sintetiza el documento en estructura para un reporte corto.`) +
+      `\n\n` + limiter +
+      `\n\nDevuelve JSON con esta forma EXACTA:\n` +
+      `{\n  "title": "string",\n  "executive_summary": "string (3-6 líneas)",\n  "kpis": [{"label": "string", "value": "string"}],\n  "insights": ["bullet", ...],\n  "recommendations": ["bullet", ...]\n}`;
 
     // 1) Subir a Files API
     let fileId = null;
-    try {
+    {
       const uploadForm = new FormData();
       uploadForm.append("file", file);
       uploadForm.append("purpose", "user_data");
-
       const filesResp = await fetch(`${OPENAI_URL}/files`, {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
@@ -83,146 +91,167 @@ Reglas duras:
       });
       if (!filesResp.ok) {
         const t = await filesResp.text();
-        console.error("Files API error:", t);
         return new Response(`Error subiendo archivo: ${t}`, { status: 500 });
       }
       ({ id: fileId } = await filesResp.json());
-    } catch (e) {
-      console.error("Files API exception:", e);
-      return new Response("No se pudo subir el archivo a OpenAI Files.", { status: 500 });
-    }
-    if (!fileId) {
-      console.error("Sin fileId tras Files API");
-      return new Response("No se obtuvo file_id de OpenAI.", { status: 502 });
+      if (!fileId) return new Response("No se obtuvo file_id de OpenAI.", { status: 502 });
     }
 
-    // 2) Responses API → pedir {title, html}
-    let title = "InsightSimple - Reporte";
-    let html = "";
-    try {
-      const body = {
-        model: "gpt-4.1-mini",
-        max_output_tokens: 6000,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "report_html_payload",
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                title: { type: "string" },
-                html:  { type: "string", description: "Documento HTML completo (<!DOCTYPE html> ... </html>)" }
+    // 2) Responses API → JSON estructurado
+    const body = {
+      model: "gpt-4.1-mini",
+      max_output_tokens: 3000, // rápido
+      text: {
+        format: {
+          type: "json_schema",
+          name: "report_struct_payload",
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              title: { type: "string" },
+              executive_summary: { type: "string" },
+              kpis: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: { label: { type: "string" }, value: { type: "string" } },
+                  required: ["label", "value"]
+                }
               },
-              required: ["title", "html"]
-            }
+              insights: { type: "array", items: { type: "string" } },
+              recommendations: { type: "array", items: { type: "string" } }
+            },
+            required: ["title", "executive_summary", "kpis", "insights", "recommendations"]
           }
+        }
+      },
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_file", file_id: fileId }
+          ],
         },
-        input: [
-          {
-            role: "user",
-            content: [
-              { type: "input_text", text: prompt },
-              { type: "input_file", file_id: fileId },
-            ],
-          },
-        ],
-      };
+      ],
+    };
 
-      const resp = await fetch(`${OPENAI_URL}/responses`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
+    const resp = await fetch(`${OPENAI_URL}/responses`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      return new Response(`Error en Responses API: ${t}`, { status: 500 });
+    }
+    const json = await resp.json();
+
+    let out = extractOutputText(json) || "";
+    out = stripFences(out);
+
+    let data;
+    try { data = JSON.parse(out); }
+    catch {
+      return new Response("El modelo no devolvió JSON válido.", { status: 502 });
+    }
+
+    // Normalizar campos
+    const title = (data.title || "InsightSimple — Reporte").toString().trim();
+    const summary = (data.executive_summary || "").toString().trim();
+    const kpis = Array.isArray(data.kpis) ? data.kpis.slice(0, 6) : [];
+    const insights = Array.isArray(data.insights) ? data.insights.slice(0, 8) : [];
+    const recs = Array.isArray(data.recommendations) ? data.recommendations.slice(0, 8) : [];
+
+    // 3) Componer PDF (≤ 3 páginas) con pdf-lib
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const PAGE_W = 595.28;   // A4 width pt
+    const PAGE_H = 841.89;   // A4 height pt
+    const M = 42;            // margin
+    const LINE = 14;         // leading
+    const TITLE_SIZE = 22;
+    const H2 = 14;
+    const TEXT = 11;
+    const GRAY = rgb(0.35, 0.40, 0.55);
+
+    const addPage = () => pdfDoc.addPage([PAGE_W, PAGE_H]);
+
+    // Page 1 — portada + KPIs
+    let page = addPage();
+    let y = PAGE_H - M;
+    page.drawText(title, { x: M, y: y - TITLE_SIZE, size: TITLE_SIZE, font: fontBold, color: rgb(0.93, 0.95, 0.98) });
+    y -= (TITLE_SIZE + 14);
+
+    const dateStr = new Date().toLocaleDateString("es-AR");
+    page.drawText(`Fecha: ${dateStr}`, { x: M, y: y - TEXT, size: TEXT, font, color: GRAY });
+    y -= (TEXT + 18);
+
+    page.drawText("KPIs estrella", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+    y -= (H2 + 10);
+    const kpiCols = 2;
+    const kpiBoxW = (PAGE_W - 2*M - 16) / kpiCols;
+    const kpiBoxH = 48;
+
+    (kpis.length ? kpis : [{label:"Métrica", value:"N/A"}]).slice(0, 4).forEach((kpi, i) => {
+      const row = Math.floor(i / kpiCols);
+      const col = i % kpiCols;
+      const x = M + col * (kpiBoxW + 16);
+      const boxY = y - row * (kpiBoxH + 12);
+      page.drawRectangle({ x, y: boxY - kpiBoxH, width: kpiBoxW, height: kpiBoxH, color: rgb(0.08,0.11,0.20), borderColor: GRAY, borderWidth: 0.5, opacity: 0.9 });
+      page.drawText(kpi.label?.toString() || "", { x: x + 10, y: boxY - 18, size: TEXT, font, color: GRAY });
+      page.drawText(kpi.value?.toString() || "", { x: x + 10, y: boxY - 34, size: TEXT+3, font: fontBold, color: rgb(0.95,0.97,1) });
+      if (i === 3) y = boxY - kpiBoxH - 16;
+    });
+    if (kpis.length <= 2) y -= 60; // espacio si pocos KPIs
+
+    // Page 2 — Resumen + Insights
+    page = addPage();
+    y = PAGE_H - M;
+    page.drawText("Resumen ejecutivo", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+    y -= (H2 + 12);
+
+    wrapText(summary || "Sin resumen disponible.", 90).forEach(line => {
+      page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: rgb(0.92,0.94,0.98) });
+      y -= LINE;
+    });
+    y -= 10;
+
+    page.drawText("Insights", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+    y -= (H2 + 8);
+    (insights.length ? insights : ["Sin insights disponibles."]).forEach(b => {
+      const lines = wrapText("• " + b, 95);
+      lines.forEach(line => {
+        page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: rgb(0.92,0.94,0.98) });
+        y -= LINE;
       });
-      if (!resp.ok) {
-        const t = await resp.text();
-        console.error("Responses API error:", t);
-        return new Response(`Error en Responses API: ${t}`, { status: 500 });
-      }
-      const json = await resp.json();
+    });
 
-      let out = extractOutputText(json) || "";
-      out = stripFences(out);
-
-      let data;
-      try { data = JSON.parse(out); }
-      catch {
-        console.error("JSON inválido devuelto por el modelo:", out.slice(0, 4000));
-        return new Response("El modelo no devolvió JSON válido con {title, html}.", { status: 502 });
-      }
-
-      if (typeof data.title === "string" && data.title.trim()) title = data.title.trim();
-      if (typeof data.html === "string") html = data.html.trim();
-
-      if (!html || !html.toLowerCase().includes("</html>")) {
-        console.error("HTML incompleto / sin </html>");
-        return new Response("El modelo no devolvió un documento HTML completo.", { status: 502 });
-      }
-
-      // Guardrail tamaño
-      if (html.length > 600_000) {
-        html = html.slice(0, 600_000) + "<!-- truncado por tamaño -->";
-      }
-    } catch (e) {
-      console.error("Responses API exception:", e);
-      // Fallback: generamos un HTML mínimo para no romper (el usuario al menos descarga algo)
-      html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:system-ui,Segoe UI,Arial;margin:24px} h1{margin:0 0 8px} .muted{color:#666}</style>
-</head><body>
-<h1>${title}</h1>
-<p class="muted">No se pudo generar el informe con IA en este intento. Probá de nuevo o usa un archivo más liviano.</p>
-</body></html>`;
-    }
-
-    // 3) Render HTML → PDF
-    let exePath = null;
-    try {
-      exePath = await chromium.executablePath();
-    } catch (e) {
-      console.error("chromium.executablePath() fallo:", e);
-    }
-    if (!exePath) {
-      console.error("Chromium executablePath no disponible");
-      return new Response("Chromium no inicializó en el entorno de Functions.", { status: 500 });
-    }
-
-    let pdfBytes;
-    try {
-      const browser = await puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: { width: 1200, height: 800, deviceScaleFactor: 1 },
-        executablePath: exePath,
-        headless: chromium.headless,
+    // Page 3 — Recomendaciones
+    page = addPage();
+    y = PAGE_H - M;
+    page.drawText("Recomendaciones", { x: M, y: y - H2, size: H2, font: fontBold, color: rgb(0.85, 0.88, 1) });
+    y -= (H2 + 10);
+    (recs.length ? recs : ["Sin recomendaciones disponibles."]).forEach(b => {
+      const lines = wrapText("• " + b, 95);
+      lines.forEach(line => {
+        if (y < M + 40) return; // no crear más páginas: límite 3
+        page.drawText(line, { x: M, y: y - TEXT, size: TEXT, font, color: rgb(0.92,0.94,0.98) });
+        y -= LINE;
       });
+    });
 
-      try {
-        const page = await browser.newPage();
-        page.setDefaultNavigationTimeout(20000);
-        page.setDefaultTimeout(20000);
-
-        await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 20000 });
-        pdfBytes = await page.pdf({
-          format: "A4",
-          printBackground: true,
-          margin: { top: "12mm", right: "10mm", bottom: "14mm", left: "10mm" },
-          timeout: 20000,
-        });
-        await page.close();
-      } finally {
-        await browser.close();
-      }
-    } catch (e) {
-      console.error("Puppeteer/Chromium exception:", e);
-      return new Response("Fallo al renderizar el PDF en servidor.", { status: 500 });
-    }
-
+    const bytes = await pdfDoc.save();
     const safe = title.replace(/[^a-z0-9\-_. ]/gi, "").replace(/\s+/g, "-");
     const filename = `${safe || "InsightSimple-Reporte"}.pdf`;
 
-    return new Response(pdfBytes, {
+    return new Response(bytes, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
@@ -230,7 +259,7 @@ Reglas duras:
       },
     });
   } catch (e) {
-    console.error("Error no controlado:", e);
+    console.error("Error interno:", e);
     return new Response("Error interno en generate-dashboard", { status: 500 });
   }
 };
