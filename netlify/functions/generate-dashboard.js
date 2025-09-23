@@ -200,15 +200,15 @@ Reglas duras:
 
       try {
         const page = await browser.newPage();
-        page.setDefaultNavigationTimeout(9000);
-        page.setDefaultTimeout(9000);
+        page.setDefaultNavigationTimeout(20000);
+        page.setDefaultTimeout(20000);
 
-        await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 9000 });
+        await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 20000 });
         pdfBytes = await page.pdf({
           format: "A4",
           printBackground: true,
           margin: { top: "12mm", right: "10mm", bottom: "14mm", left: "10mm" },
-          timeout: 9000,
+          timeout: 20000,
         });
         await page.close();
       } finally {
