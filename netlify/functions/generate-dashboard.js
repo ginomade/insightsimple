@@ -4,8 +4,9 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 const OPENAI_URL = "https://api.openai.com/v1";
 
 // -------- utilidades de extracción / saneado ----------
+// --- utilidades robustas para parsear la salida del modelo ---
+
 function extractOutputText(json) {
-  // extrae cualquier output_text de la Responses API
   const texts = [];
   const walk = (node) => {
     if (!node) return;
@@ -13,9 +14,7 @@ function extractOutputText(json) {
     if (typeof node === "object") {
       if (node.type === "output_text" && typeof node.text === "string") texts.push(node.text);
       if (node.type === "message" && Array.isArray(node.content)) {
-        node.content.forEach((c) => {
-          if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text);
-        });
+        node.content.forEach((c) => { if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text); });
       }
       for (const k in node) walk(node[k]);
     }
@@ -26,9 +25,90 @@ function extractOutputText(json) {
 
 function stripFences(s) {
   if (typeof s !== "string") return s;
-  // quita ```json ...``` o ``` ...```
+  // quita ```json ... ``` o ```
   return s.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "").trim();
 }
+
+// Extrae el PRIMER objeto JSON top-level, incluso si hay varios pegados.
+function extractFirstTopLevelObjectBlock(s) {
+  let inStr = false, esc = false, depth = 0, start = -1;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === "\\") { esc = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    } else {
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === "{") {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          return s.slice(start, i + 1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function removeTrailingCommas(s) {
+  // ", }" o ", ]" → quitamos la coma
+  return s.replace(/,\s*([}\]])/g, "$1").replace(/:\s*,/g, ":");
+}
+
+function quoteBareKeys(s) {
+  // Añade comillas a claves simples no entrecomilladas: { foo: 1 } -> { "foo": 1 }
+  // (Heurístico; asume que no estamos dentro de strings gracias al escáner previo)
+  return s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+}
+
+function normalizeWhitespaceAndQuotes(s) {
+  return s
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\r\n?/g, "\n")   // normaliza CRLF
+    .replace(/\n+/g, " ")      // JSON no admite \n crudos dentro de strings → espacios
+    .replace(/\u00A0/g, " ")   // nbsp → espacio
+    .replace(/\s{2,}/g, " ")   // colapsar espacios
+    .trim();
+}
+
+function parseJsonLoose(raw) {
+  if (!raw) throw new Error("empty");
+  // 1) limpieza básica
+  let s = stripFences(raw);
+  s = normalizeWhitespaceAndQuotes(s);
+
+  // 2) si la salida trae 2+ objetos pegados, agarramos el primero bien balanceado
+  let block = extractFirstTopLevelObjectBlock(s) || s;
+
+  // 3) intentos de parseo progresivos
+  const attempts = [
+    (x) => JSON.parse(x),
+    (x) => JSON.parse(removeTrailingCommas(x)),
+    (x) => JSON.parse(quoteBareKeys(removeTrailingCommas(x))),
+  ];
+
+  for (const tryParse of attempts) {
+    try { return tryParse(block); } catch (_) {}
+  }
+
+  // 4) si aún falla y el bloque detectado es muy chico, intentamos con el global "s" entero
+  if (block.length < 50) {
+    const alt = extractFirstTopLevelObjectBlock(quoteBareKeys(removeTrailingCommas(s))) || s;
+    for (const tryParse of attempts) {
+      try { return tryParse(alt); } catch (_) {}
+    }
+  }
+
+  // Nada funcionó
+  throw new Error("invalid_json_after_cleanup");
+}
+
 
 function normalizeQuotes(s) {
   if (typeof s !== "string") return s;
@@ -44,33 +124,6 @@ function findLikelyJsonBlock(s) {
   const last = s.lastIndexOf("}");
   if (first === -1 || last === -1 || last <= first) return null;
   return s.slice(first, last + 1);
-}
-
-function removeTrailingCommas(s) {
-  // quita comas colgantes en objetos/arrays simples
-  return s
-    .replace(/,\s*([}\]])/g, "$1")
-    .replace(/:\s*,/g, ":");
-}
-
-function parseJsonLoose(raw) {
-  if (!raw) throw new Error("empty");
-  let s = stripFences(raw);
-  s = normalizeQuotes(s);
-  let candidate = findLikelyJsonBlock(s) || s;
-
-  // algunos modelos ponen clave sin comillas: "kpis": [{label: "X", value: "Y"}]
-  // intentamos comillar claves simples (mejor que nada, sin romper JSON correcto)
-  candidate = candidate.replace(/([{,]\s*)([A-Za-z0-9_]+)\s*:/g, '$1"$2":');
-
-  candidate = removeTrailingCommas(candidate);
-
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    // último intento: si aún está mal, tira
-    throw new Error("invalid_json_after_cleanup");
-  }
 }
 
 // -------- PDF helpers ----------
